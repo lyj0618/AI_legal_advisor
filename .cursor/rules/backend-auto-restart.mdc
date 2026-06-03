@@ -1,0 +1,37 @@
+---
+description: 修改后端代码后自动重启 uvicorn 服务
+globs: legal-ai-advisor/backend/**/*
+alwaysApply: true
+---
+
+# 后端修改后自动重启
+
+在本项目（`legal-ai-advisor`）中，**只要改动了后端相关文件，必须在完成修改后立刻重启后端**，再向用户汇报结果。
+
+## 适用范围
+
+- `legal-ai-advisor/backend/**` 下任意 `.py`、`.env.example`、`requirements.txt` 等影响运行的文件
+
+## 执行方式（Windows）
+
+在项目根目录或 `backend` 目录执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "legal-ai-advisor/backend/scripts/restart-backend.ps1"
+```
+
+或：
+
+```powershell
+cd legal-ai-advisor/backend
+powershell -ExecutionPolicy Bypass -File scripts/restart-backend.ps1
+```
+
+## 验证
+
+重启后请求 `http://127.0.0.1:8000/health`，确认 `status` 为 `ok`。
+
+## 说明
+
+- 开发默认端口 **8000**（与 `frontend/vite.config.js` 代理一致）
+- 日常开发也可用 `python run.py`（已启用 `--reload`）；Agent 在批量修改或进程异常时仍应执行上述重启脚本

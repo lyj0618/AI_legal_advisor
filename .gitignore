@@ -1,0 +1,28 @@
+# Python
+backend/venv/
+backend/__pycache__/
+**/__pycache__/
+*.pyc
+backend/.env
+*.db
+
+# 运行时数据（不上传）
+backend/data/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+# 本地调试输出
+backend/scripts/*_out.txt
+backend/scripts/rechunk_out.txt
+backend/scripts/compare_docs_out.txt
+backend/scripts/inspect_chunks_out.txt
+backend/scripts/check_labor_out.txt
+backend/scripts/check_all_out.txt
