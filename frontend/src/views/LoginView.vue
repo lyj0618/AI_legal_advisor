@@ -34,9 +34,7 @@
       </el-form>
 
       <div class="login-footer">
-        <p>新环境默认：admin / LegalAi@2026</p>
-        <p style="margin-top:4px;">已有数据库可能仍为旧密码 123456</p>
-        <p style="margin-top:6px;">© 2024 AI 智能知识助手</p>
+        <p>© 2024 AI 智能知识助手</p>
       </div>
     </div>
   </div>
