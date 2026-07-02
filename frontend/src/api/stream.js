@@ -4,7 +4,11 @@ const TOKEN_KEY = 'access_token'
  * SSE 流式对话补全
  * @param {string} chatId
  * @param {string} question
- * @param {{ onDelta?: (t:string, full:string)=>void, onDone?: (answer:string, messageId?:number)=>void, onError?: (e:Error)=>void }} handlers
+ * @param {{
+ *   onThinking?: (chunk:string, full:string)=>void,
+ *   onDone?: (answer:string, messageId?:number, thinking?:string)=>void,
+ *   onError?: (e:Error)=>void
+ * }} handlers
  * @param {{ imageIds?: string[] }} options
  */
 export async function completionStream(chatId, question, handlers = {}, options = {}) {
@@ -42,14 +46,15 @@ export async function completionStream(chatId, question, handlers = {}, options 
   if (!contentType.includes('text/event-stream')) {
     const j = await res.json()
     if (j.code !== 0) throw new Error(j.message || '请求失败')
-    handlers.onDone?.(j.data?.answer || '')
+    handlers.onDone?.(j.data?.answer || '', j.data?.message_id, j.data?.thinking || '')
     return j.data?.answer || ''
   }
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
-  let full = ''
+  let answer = ''
+  let thinking = ''
 
   while (true) {
     const { done, value } = await reader.read()
@@ -65,12 +70,15 @@ export async function completionStream(chatId, question, handlers = {}, options 
       if (!jsonStr) continue
       try {
         const evt = JSON.parse(jsonStr)
-        if (evt.type === 'delta' && evt.content) {
-          full += evt.content
-          handlers.onDelta?.(evt.content, full)
+        if (evt.type === 'thinking' && evt.content) {
+          thinking += evt.content
+          handlers.onThinking?.(evt.content, thinking)
+        } else if (evt.type === 'delta' && evt.content) {
+          answer += evt.content
         } else if (evt.type === 'done') {
-          full = evt.answer || full
-          handlers.onDone?.(full, evt.message_id)
+          answer = evt.answer || answer
+          thinking = evt.thinking || thinking
+          handlers.onDone?.(answer, evt.message_id, thinking)
         } else if (evt.type === 'error') {
           throw new Error(evt.message || '流式输出失败')
         }
@@ -81,5 +89,5 @@ export async function completionStream(chatId, question, handlers = {}, options 
     }
   }
 
-  return full
+  return answer
 }

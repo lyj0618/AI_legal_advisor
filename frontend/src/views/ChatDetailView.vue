@@ -9,22 +9,27 @@
       </span>
     </div>
 
-    <div v-show="!showSettings" class="chat-main" style="flex:1;">
+    <div v-show="!showSettings" class="chat-layout">
+      <div class="chat-main">
       <div ref="msgBox" class="chat-messages">
         <div v-if="!messages.length && chat?.prompt?.opener" style="text-align:center;padding:40px;color:#94a3b8;font-size:13px;">
           {{ chat.prompt.opener }}
         </div>
-        <div v-for="(m, i) in messages" :key="i" :class="'chat-msg ' + (m.role === 'user' ? 'msg-user' : 'msg-assistant')">
+        <div
+          v-for="(m, i) in messages"
+          :id="'chat-msg-' + i"
+          :key="m.id || i"
+          :class="'chat-msg ' + (m.role === 'user' ? 'msg-user' : 'msg-assistant')"
+        >
           <div
             v-if="m.role === 'assistant'"
             class="msg-avatar assistant-avatar"
-            :style="assistantAvatarStyle"
             :title="chat?.name"
           >
-            {{ assistantInitial }}
+            <img :src="DEFAULT_ASSISTANT_AVATAR" alt="" class="msg-avatar-img" />
           </div>
           <div class="msg-content">
-            <div class="msg-bubble">
+            <div class="msg-bubble" :style="m.role === 'user' ? userBubbleStyle : answerBubbleStyle">
               <div v-if="m.role === 'user' && m.attachments?.length" class="msg-images">
                 <AuthImage
                   v-for="(img, j) in m.attachments"
@@ -33,18 +38,34 @@
                   :alt="img.name || '图片'"
                 />
               </div>
-              <template v-if="m.role === 'assistant' && m.streaming && !m.content">
-                <el-icon class="is-loading"><Loading /></el-icon> 正在分析...
+              <template v-if="m.role === 'assistant' && m.streaming && !m.thinking">
+                <div class="answer-generating">
+                  <el-icon class="is-loading answer-generating-icon"><Loading /></el-icon>
+                  <span class="answer-generating-text">正在生成回答</span>
+                  <span class="answer-generating-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                </div>
               </template>
-              <template v-else-if="m.role === 'assistant'">
-                <AnswerContent :text="m.content" :streaming="m.streaming" />
+              <template v-else-if="m.role === 'assistant' && m.streaming && (m.thinkingStreaming || (m.thinking && !m.content))">
+                <ThinkingBlock :text="m.thinking" :streaming="m.thinkingStreaming" />
+                <div v-if="m.streaming && !m.content" class="answer-generating answer-generating--compact">
+                  <el-icon class="is-loading answer-generating-icon"><Loading /></el-icon>
+                  <span class="answer-generating-text">正在整理最终回答</span>
+                </div>
+              </template>
+              <template v-else-if="m.role === 'assistant' && (m.content || m.revealStreaming)">
+                <ThinkingBlock
+                  v-if="m.thinking"
+                  :text="m.thinking"
+                  :streaming="false"
+                />
+                <AnswerContent :text="m.content" :streaming="m.revealStreaming" />
               </template>
               <template v-else-if="m.content">
                 <span class="msg-plain-text">{{ m.content }}</span>
               </template>
             </div>
             <div
-              v-if="m.role === 'assistant' && !m.streaming && m.content && m.id"
+              v-if="m.role === 'assistant' && !m.streaming && !m.revealStreaming && m.content && m.id"
               class="msg-feedback"
             >
               <button
@@ -70,7 +91,7 @@
             </div>
           </div>
           <div v-if="m.role === 'user'" class="msg-avatar user-avatar" :title="auth.username">
-            {{ userInitial }}
+            <img :src="DEFAULT_USER_AVATAR" alt="" class="msg-avatar-img" />
           </div>
         </div>
       </div>
@@ -104,14 +125,6 @@
             </div>
           </div>
           <div class="chat-input-field">
-            <input
-              ref="fileInput"
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif,image/bmp"
-              multiple
-              hidden
-              @change="onPickImages"
-            />
             <el-input
               v-model="input"
               type="textarea"
@@ -122,9 +135,6 @@
           </div>
         </div>
         <div class="chat-input-actions">
-          <el-button :disabled="sending || pendingImages.length >= maxChatImages" @click="pickImages">
-            图片
-          </el-button>
           <el-button type="primary" :loading="sending" :disabled="hasAnalyzingImages" @click="send">
             发送
           </el-button>
@@ -139,9 +149,35 @@
           </div>
         </div>
       </div>
-      <p style="font-size:11px;color:#94a3b8;text-align:center;padding:6px;">
+      <p class="chat-input-hint">
         支持在输入框粘贴/拖放图片并自动解析；发送后结合知识库生成回答
       </p>
+      </div>
+
+      <aside class="chat-toc" :class="{ collapsed: tocCollapsed }">
+        <button
+          type="button"
+          class="chat-toc-toggle"
+          :title="tocCollapsed ? '展开问题目录' : '收起问题目录'"
+          @click="tocCollapsed = !tocCollapsed"
+        >
+          <el-icon><List /></el-icon>
+          <span v-if="!tocCollapsed" class="chat-toc-toggle-text">问题目录</span>
+        </button>
+        <div v-show="!tocCollapsed" class="chat-toc-body">
+          <div v-if="!questionOutline.length" class="chat-toc-empty">暂无提问</div>
+          <button
+            v-for="item in questionOutline"
+            :key="item.index"
+            type="button"
+            class="chat-toc-item"
+            @click="scrollToMessage(item.index)"
+          >
+            <span class="chat-toc-num">{{ item.num }}</span>
+            <span class="chat-toc-preview">{{ item.preview }}</span>
+          </button>
+        </div>
+      </aside>
     </div>
 
     <div v-show="showSettings" class="center-content">
@@ -194,19 +230,23 @@
 </template>
 
 <script setup>
-import { Loading } from '@element-plus/icons-vue'
+import { List, Loading } from '@element-plus/icons-vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { api, completionStream } from '@/api'
 import AnswerContent from '@/components/AnswerContent.vue'
+import ThinkingBlock from '@/components/ThinkingBlock.vue'
 import AuthImage from '@/components/AuthImage.vue'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { cleanImageAnalysis } from '@/utils/textFormat'
+import { bubbleTextColor } from '@/utils/bubbleColors'
 
 const maxChatImages = 3
 const maxChatImageMb = 5
+const DEFAULT_USER_AVATAR = '/avatars/default-user.png'
+const DEFAULT_ASSISTANT_AVATAR = '/avatars/default-assistant.png'
 
 const route = useRoute()
 const router = useRouter()
@@ -220,8 +260,21 @@ const input = ref('')
 const sending = ref(false)
 const saving = ref(false)
 const msgBox = ref(null)
-const fileInput = ref(null)
 const pendingImages = ref([])
+const tocCollapsed = ref(true)
+const revealToken = ref(0)
+
+const userBubbleStyle = computed(() => ({
+  background: auth.questionBubbleColor,
+  color: bubbleTextColor(auth.questionBubbleColor),
+}))
+const answerBubbleStyle = computed(() => ({
+  background: auth.answerBubbleColor,
+  color: bubbleTextColor(auth.answerBubbleColor),
+}))
+
+const REVEAL_CHUNK = 4
+const REVEAL_DELAY_MS = 12
 
 const form = reactive({
   name: '',
@@ -239,15 +292,29 @@ const form = reactive({
 const showSettings = computed(
   () => auth.isAdmin && isTemplate.value && route.query.tab === 'settings'
 )
-const assistantColor = computed(() => chat.value?.color || '#2563eb')
-const assistantInitial = computed(() => (chat.value?.name || '助').charAt(0))
-const userInitial = computed(() => (auth.username || '用').charAt(0).toUpperCase())
-const assistantAvatarStyle = computed(() => ({
-  background: `${assistantColor.value}18`,
-  color: assistantColor.value,
-  border: `1px solid ${assistantColor.value}33`,
-}))
 const hasAnalyzingImages = computed(() => pendingImages.value.some((img) => img.analyzing))
+
+const questionOutline = computed(() => {
+  const items = []
+  let num = 0
+  for (let i = 0; i < messages.value.length; i++) {
+    const m = messages.value[i]
+    if (m.role !== 'user') continue
+    const text = (m.content || '').trim()
+    if (!text) continue
+    num += 1
+    items.push({
+      index: i,
+      num,
+      preview: text.length > 36 ? `${text.slice(0, 36)}…` : text,
+    })
+  }
+  return items
+})
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 function goBack() {
   router.push(auth.isAdmin ? '/chat' : '/experts')
@@ -299,17 +366,17 @@ async function loadMessages() {
       id: m.id,
       role: m.role,
       content: m.content,
+      thinking: m.thinking || '',
       attachments: m.attachments || [],
       feedback: m.feedback || null,
       streaming: false,
+      thinkingStreaming: false,
+      revealStreaming: false,
     }))
   } catch {
     messages.value = []
   }
-}
-
-function pickImages() {
-  fileInput.value?.click()
+  await scrollBottom(true)
 }
 
 function onPasteImages(e) {
@@ -326,12 +393,6 @@ function onPasteImages(e) {
 function onDropImages(e) {
   const files = Array.from(e.dataTransfer?.files || []).filter((f) => f.type.startsWith('image/'))
   if (!files.length) return
-  queueImageFiles(files)
-}
-
-function onPickImages(e) {
-  const files = Array.from(e.target.files || [])
-  e.target.value = ''
   queueImageFiles(files)
 }
 
@@ -413,11 +474,12 @@ function clearPendingImages() {
 }
 
 onBeforeUnmount(() => {
+  revealToken.value += 1
   clearPendingImages()
 })
 
 async function setFeedback(msg, type) {
-  if (!msg.id || msg.streaming) return
+  if (!msg.id || msg.streaming || msg.revealStreaming) return
   const next = msg.feedback === type ? null : type
   try {
     const updated = await api.setMessageFeedback(chatId, msg.id, next)
@@ -457,7 +519,15 @@ async function send() {
   sending.value = true
 
   const assistantIdx = messages.value.length
-  messages.value.push({ role: 'assistant', content: '', feedback: null, streaming: true })
+  messages.value.push({
+    role: 'assistant',
+    content: '',
+    thinking: '',
+    feedback: null,
+    streaming: true,
+    thinkingStreaming: false,
+    revealStreaming: false,
+  })
   await scrollBottom()
 
   try {
@@ -465,27 +535,73 @@ async function send() {
       chatId,
       q,
       {
-        onDelta: (_token, full) => {
-          messages.value[assistantIdx].content = full
+        onThinking: (_chunk, full) => {
+          const msg = messages.value[assistantIdx]
+          if (!msg) return
+          msg.thinking = full
+          msg.thinkingStreaming = true
+          msg.streaming = true
           scrollBottom()
         },
-        onDone: (answer, messageId) => {
-          messages.value[assistantIdx].content = answer
-          messages.value[assistantIdx].streaming = false
-          if (messageId) messages.value[assistantIdx].id = messageId
+        onDone: async (answer, messageId, thinking) => {
+          const msg = messages.value[assistantIdx]
+          if (msg) {
+            msg.thinking = thinking || msg.thinking || ''
+            msg.thinkingStreaming = false
+            msg.streaming = false
+          }
+          await revealAnswer(assistantIdx, answer, messageId)
         },
       },
       { imageIds },
     )
   } catch (e) {
-    messages.value[assistantIdx] = { role: 'assistant', content: '错误: ' + e.message, streaming: false }
+    messages.value[assistantIdx] = {
+      role: 'assistant',
+      content: '错误: ' + e.message,
+      thinking: '',
+      streaming: false,
+      thinkingStreaming: false,
+      revealStreaming: false,
+    }
   } finally {
     sending.value = false
-    if (messages.value[assistantIdx]) {
-      messages.value[assistantIdx].streaming = false
+    const msg = messages.value[assistantIdx]
+    if (msg) {
+      msg.streaming = false
     }
     await scrollBottom()
   }
+}
+
+async function revealAnswer(assistantIdx, fullText, messageId) {
+  const token = ++revealToken.value
+  const msg = messages.value[assistantIdx]
+  if (!msg) return
+
+  msg.streaming = false
+  msg.revealStreaming = true
+  msg.content = ''
+  if (messageId) msg.id = messageId
+
+  const text = fullText || ''
+  for (let i = 0; i < text.length; i += REVEAL_CHUNK) {
+    if (revealToken.value !== token) return
+    msg.content = text.slice(0, Math.min(i + REVEAL_CHUNK, text.length))
+    await scrollBottom()
+    await sleep(REVEAL_DELAY_MS)
+  }
+
+  if (revealToken.value !== token) return
+  msg.content = text
+  msg.revealStreaming = false
+  await scrollBottom()
+}
+
+function scrollToMessage(index) {
+  const el = document.getElementById(`chat-msg-${index}`)
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 async function exportChat() {
@@ -513,9 +629,17 @@ async function shareChat() {
   }
 }
 
-async function scrollBottom() {
+async function scrollBottom(force = false) {
   await nextTick()
-  if (msgBox.value) msgBox.value.scrollTop = msgBox.value.scrollHeight
+  if (!msgBox.value) return
+  const scroll = () => {
+    msgBox.value.scrollTop = msgBox.value.scrollHeight
+  }
+  scroll()
+  if (force) {
+    requestAnimationFrame(scroll)
+    setTimeout(scroll, 80)
+  }
 }
 
 async function save() {
@@ -548,6 +672,111 @@ async function save() {
 </script>
 
 <style scoped>
+.chat-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.chat-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.chat-input-hint {
+  font-size: 11px;
+  color: #94a3b8;
+  text-align: center;
+  padding: 6px;
+  flex-shrink: 0;
+}
+.chat-toc {
+  flex-shrink: 0;
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid #edf0f4;
+  background: #fafbfc;
+  transition: width 0.2s ease;
+}
+.chat-toc.collapsed {
+  width: 40px;
+}
+.chat-toc-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 12px 10px;
+  border: none;
+  border-bottom: 1px solid #edf0f4;
+  background: #fff;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.chat-toc.collapsed .chat-toc-toggle {
+  justify-content: center;
+  padding: 12px 0;
+}
+.chat-toc-toggle:hover {
+  color: #2563eb;
+  background: #f8fafc;
+}
+.chat-toc-toggle-text {
+  white-space: nowrap;
+}
+.chat-toc-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+.chat-toc-empty {
+  font-size: 12px;
+  color: #94a3b8;
+  text-align: center;
+  padding: 16px 8px;
+}
+.chat-toc-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border: none;
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.chat-toc-item:hover {
+  background: #eff6ff;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.08);
+}
+.chat-toc-num {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+.chat-toc-preview {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #475569;
+  word-break: break-word;
+}
 .chat-more-menu {
   position: relative;
   flex-shrink: 0;
@@ -758,5 +987,42 @@ async function save() {
 .msg-plain-text {
   white-space: pre-wrap;
   word-break: break-word;
+}
+.answer-generating {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 24px;
+}
+.answer-generating--compact {
+  margin-top: 8px;
+  font-size: 13px;
+}
+.answer-generating-icon {
+  font-size: 16px;
+  color: #2563eb;
+}
+.answer-generating-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 16px;
+}
+.answer-generating-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #94a3b8;
+  animation: answer-dot-bounce 1.2s infinite ease-in-out both;
+}
+.answer-generating-dots i:nth-child(1) { animation-delay: 0s; }
+.answer-generating-dots i:nth-child(2) { animation-delay: 0.15s; }
+.answer-generating-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes answer-dot-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.45; }
+  40% { transform: translateY(-4px); opacity: 1; }
 }
 </style>

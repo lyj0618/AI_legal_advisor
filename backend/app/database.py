@@ -73,6 +73,8 @@ def _migrate_chats_columns():
         alters.append("ALTER TABLE chat_messages ADD COLUMN feedback VARCHAR(16)")
     if "attachments_json" not in msg_cols:
         alters.append("ALTER TABLE chat_messages ADD COLUMN attachments_json TEXT DEFAULT '[]'")
+    if "thinking_content" not in msg_cols:
+        alters.append("ALTER TABLE chat_messages ADD COLUMN thinking_content TEXT DEFAULT ''")
     for sql in alters:
         cur.execute(sql)
     if alters:
@@ -90,6 +92,32 @@ def _migrate_chats_columns():
     conn.close()
 
 
+def _migrate_users_columns():
+    """为 users 表补充个性化气泡颜色字段。"""
+    import sqlite3
+
+    db_path = settings.data_path / "legal_ai.db"
+    if not db_path.exists():
+        return
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(users)")
+    cols = {row[1] for row in cur.fetchall()}
+    alters = []
+    if "question_bubble_color" not in cols:
+        alters.append(
+            "ALTER TABLE users ADD COLUMN question_bubble_color VARCHAR(7) DEFAULT '#2563eb'"
+        )
+    if "answer_bubble_color" not in cols:
+        alters.append(
+            "ALTER TABLE users ADD COLUMN answer_bubble_color VARCHAR(7) DEFAULT '#f1f5f9'"
+        )
+    for sql in alters:
+        cur.execute(sql)
+    conn.commit()
+    conn.close()
+
+
 def init_db():
     from app import models  # noqa: F401
     from app.services.expert_seed import ensure_builtin_expert_templates
@@ -97,6 +125,7 @@ def init_db():
 
     Base.metadata.create_all(bind=engine)
     _migrate_chats_columns()
+    _migrate_users_columns()
     db = SessionLocal()
     try:
         ensure_default_admin(db)

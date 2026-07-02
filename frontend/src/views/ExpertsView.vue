@@ -2,7 +2,7 @@
   <div class="center-content">
     <div class="experts-header">
       <h2>助手广场</h2>
-      <p>选择行业领域的 AI 助手，基于 qwen-turbo 与知识库为您提供智能问答（仅供参考，重要事项请核实原始资料）</p>
+      <p></p>
     </div>
     <el-empty v-if="!store.experts.length" description="暂无可咨询专家，请联系管理员配置并发布已绑定知识库的专家" />
     <div v-else class="experts-grid">

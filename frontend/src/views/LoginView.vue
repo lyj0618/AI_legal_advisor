@@ -4,7 +4,7 @@
       <div class="login-header">
         <div class="login-logo">⚖</div>
         <h1 class="login-title">AI 智能知识助手</h1>
-        <p class="login-subtitle">多行业知识问答平台 · qwen-turbo</p>
+        
       </div>
 
       <el-form ref="formRef" :model="form" :rules="rules" class="login-form" @submit.prevent="handleLogin">
@@ -34,7 +34,7 @@
       </el-form>
 
       <div class="login-footer">
-        <p>© 2024 AI 智能知识助手</p>
+        <p>© 2026 AI 智能知识助手</p>
       </div>
     </div>
   </div>

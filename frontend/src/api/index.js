@@ -65,6 +65,8 @@ export const api = {
   getHealth: () => http.get('/health'),
   login: (data) => http.post('/auth/login', data),
   getMe: () => http.get('/auth/me'),
+  getPreferences: () => http.get('/auth/preferences'),
+  updatePreferences: (data) => http.put('/auth/preferences', data),
   logout: () => http.post('/auth/logout'),
 
   getExperts: (params) => http.get('/experts', { params }),

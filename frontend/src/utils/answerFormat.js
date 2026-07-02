@@ -60,3 +60,47 @@ export function parseAnswerSections(text) {
   const plain = text.trim()
   return plain ? [{ title: '', body: plain }] : []
 }
+
+const BULLET_LINE_RE = /^[-•·－—]\s+(.*)$/
+
+/**
+ * 将段落正文拆为普通文本与无序列表（- 开头行 → 实心圆点列表）
+ */
+export function parseAnswerBodyParts(body) {
+  if (!body) return []
+
+  const lines = body.split('\n')
+  const parts = []
+  let textLines = []
+  let listItems = []
+
+  const flushText = () => {
+    const text = textLines.join('\n').trim()
+    if (text) parts.push({ type: 'text', text })
+    textLines = []
+  }
+  const flushList = () => {
+    if (listItems.length) parts.push({ type: 'list', items: [...listItems] })
+    listItems = []
+  }
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    const bullet = trimmed.match(BULLET_LINE_RE)
+    if (bullet) {
+      flushText()
+      listItems.push(bullet[1])
+      continue
+    }
+    if (!trimmed) {
+      flushList()
+      flushText()
+      continue
+    }
+    flushList()
+    textLines.push(line)
+  }
+  flushList()
+  flushText()
+  return parts.length ? parts : [{ type: 'text', text: body }]
+}

@@ -7,14 +7,25 @@
           <div class="sidebar-logo">⚖</div>
           <div>
             <div class="sidebar-title">AI 智能助手</div>
-            <div class="sidebar-subtitle">企业知识问答 · qwen-turbo</div>
+            
           </div>
         </div>
         <div class="sidebar-menus">
           <div class="menu-item" :class="{ active: isActive('experts') }" @click="$router.push('/experts')">
             <el-icon><User /></el-icon> 助手广场
           </div>
+          <div
+            v-if="!auth.isAdmin"
+            class="menu-item"
+            :class="{ active: isActive('personalization') }"
+            @click="$router.push('/personalization')"
+          >
+            <el-icon><MagicStick /></el-icon> 个性化
+          </div>
           <template v-if="auth.isAdmin">
+          <div class="menu-item" :class="{ active: isActive('stats') }" @click="$router.push('/stats')">
+              <el-icon><DataAnalysis /></el-icon> 运营统计
+            </div>
             <div class="menu-item" :class="{ active: isActive('kb') }" @click="$router.push('/kb')">
               <el-icon><Collection /></el-icon> 知识库
               <span class="kb-badge">{{ store.kbDatasets.length }}</span>
@@ -22,12 +33,33 @@
             <div class="menu-item" :class="{ active: isActive('chat') }" @click="$router.push('/chat')">
               <el-icon><ChatDotRound /></el-icon> 专家管理
             </div>
-            <div class="menu-item" :class="{ active: isActive('users') }" @click="$router.push('/users')">
-              <el-icon><Avatar /></el-icon> 用户管理
+            <div class="menu-group">
+              <div
+                class="menu-item menu-group-title"
+                :class="{ expanded: systemMenuOpen, active: isSystemActive }"
+                @click="toggleSystemMenu"
+              >
+                <el-icon><Setting /></el-icon> 系统管理
+                <el-icon class="menu-group-arrow" :class="{ open: systemMenuOpen }"><ArrowDown /></el-icon>
+              </div>
+              <div v-show="systemMenuOpen" class="menu-sub-list">
+                <div
+                  class="menu-item menu-sub-item"
+                  :class="{ active: isActive('users') }"
+                  @click="$router.push('/users')"
+                >
+                  <el-icon><Avatar /></el-icon> 用户管理
+                </div>
+                <div
+                  class="menu-item menu-sub-item"
+                  :class="{ active: isActive('personalization') }"
+                  @click="$router.push('/personalization')"
+                >
+                  <el-icon><MagicStick /></el-icon> 个性化管理
+                </div>
+              </div>
             </div>
-            <div class="menu-item" :class="{ active: isActive('stats') }" @click="$router.push('/stats')">
-              <el-icon><DataAnalysis /></el-icon> 运营统计
-            </div>
+            
             <div class="menu-item" :class="{ active: isActive('qaRecords') }" @click="$router.push('/qa-records')">
               <el-icon><Notebook /></el-icon> 问答库
             </div>
@@ -110,6 +142,7 @@ const auth = useAuthStore()
 const kbTab = ref('dataset')
 const viewingDoc = ref(null)
 const kbName = ref('')
+const systemMenuOpen = ref(false)
 
 provide('kbContext', {
   kbTab,
@@ -119,6 +152,12 @@ provide('kbContext', {
 })
 
 const isKbDetail = computed(() => route.name === 'kbDetail')
+
+const isSystemActive = computed(() => route.name === 'users' || route.name === 'personalization')
+
+function toggleSystemMenu() {
+  systemMenuOpen.value = !systemMenuOpen.value
+}
 
 function isActive(name) {
   if (name === 'experts') return route.name === 'experts' || (!auth.isAdmin && route.name === 'chatDetail')
@@ -154,10 +193,14 @@ function logout() {
 watch(
   () => route.name,
   (name) => {
+    if (name === 'users' || name === 'personalization') {
+      systemMenuOpen.value = true
+    }
     if (name !== 'kbDetail') {
       viewingDoc.value = null
       kbTab.value = 'dataset'
     }
-  }
+  },
+  { immediate: true }
 )
 </script>

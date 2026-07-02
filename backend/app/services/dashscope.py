@@ -1,12 +1,22 @@
 import json
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, Literal, TypedDict
 
 import httpx
 
 from app.config import settings
 
 DASHSCOPE_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+
+class StreamChunk(TypedDict):
+    kind: Literal["thinking", "content"]
+    text: str
+
+
+class ChatCompletionResult(TypedDict):
+    content: str
+    thinking: str
 
 
 def format_dashscope_error(status_code: int, body: str, *, service: str = "模型") -> str:
@@ -68,22 +78,42 @@ class DashScopeClient:
             return self.vision_model or self.chat_model
         return self.chat_model
 
+    def _chat_payload(
+        self,
+        messages: list[dict[str, Any]],
+        temperature: float,
+        *,
+        model: str | None = None,
+        stream: bool = False,
+    ) -> dict[str, Any]:
+        use_model = model or self.resolve_model(messages)
+        payload: dict[str, Any] = {
+            "model": use_model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if stream:
+            payload["stream"] = True
+        if settings.enable_thinking or self._model_supports_thinking(use_model):
+            payload["enable_thinking"] = True
+        return payload
+
+    @staticmethod
+    def _model_supports_thinking(model: str) -> bool:
+        name = (model or "").lower()
+        return any(tag in name for tag in ("qwen3", "qwq", "qwen-plus", "deepseek-r"))
+
     async def chat_completion(
         self,
         messages: list[dict[str, Any]],
         temperature: float = 0.3,
         *,
         model: str | None = None,
-    ) -> str:
+    ) -> ChatCompletionResult:
         if not self.api_key:
             raise ValueError("未配置 DASHSCOPE_API_KEY，请在 backend/.env 中设置")
 
-        use_model = model or self.resolve_model(messages)
-        payload = {
-            "model": use_model,
-            "messages": messages,
-            "temperature": temperature,
-        }
+        payload = self._chat_payload(messages, temperature, model=model, stream=False)
         async with httpx.AsyncClient(timeout=180.0) as client:
             resp = await client.post(
                 f"{DASHSCOPE_BASE}/chat/completions",
@@ -93,7 +123,11 @@ class DashScopeClient:
             if resp.status_code >= 400:
                 raise RuntimeError(format_dashscope_error(resp.status_code, resp.text, service="对话"))
             data = resp.json()
-            return data["choices"][0]["message"]["content"]
+            msg = data["choices"][0]["message"]
+            return {
+                "content": msg.get("content") or "",
+                "thinking": msg.get("reasoning_content") or "",
+            }
 
     async def chat_completion_stream(
         self,
@@ -101,17 +135,11 @@ class DashScopeClient:
         temperature: float = 0.3,
         *,
         model: str | None = None,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[StreamChunk]:
         if not self.api_key:
             raise ValueError("未配置 DASHSCOPE_API_KEY，请在 backend/.env 中设置")
 
-        use_model = model or self.resolve_model(messages)
-        payload = {
-            "model": use_model,
-            "messages": messages,
-            "temperature": temperature,
-            "stream": True,
-        }
+        payload = self._chat_payload(messages, temperature, model=model, stream=True)
         async with httpx.AsyncClient(timeout=180.0) as client:
             async with client.stream(
                 "POST",
@@ -142,9 +170,12 @@ class DashScopeClient:
                     if not choices:
                         continue
                     delta = choices[0].get("delta") or {}
+                    reasoning = delta.get("reasoning_content")
+                    if reasoning:
+                        yield {"kind": "thinking", "text": reasoning}
                     content = delta.get("content")
                     if content:
-                        yield content
+                        yield {"kind": "content", "text": content}
 
     async def _embed_batch(self, texts: list[str]) -> list[list[float]]:
         url = "https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding"

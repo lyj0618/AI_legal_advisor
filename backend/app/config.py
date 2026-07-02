@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     )
 
     dashscope_api_key: str = ""
+    enable_thinking: bool = False
     chat_model: str = "qwen-turbo"
     vision_model: str = "qwen-vl-plus"
     embedding_model: str = "text-embedding-v3"

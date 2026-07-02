@@ -44,7 +44,8 @@ async def check_dashscope(results: list):
 
     try:
         ans = await dashscope_client.chat_completion([{"role": "user", "content": "说一个字：好"}])
-        record(results, "对话 API", len(ans) > 0, f"回答长度 {len(ans)}")
+        content = ans.get("content") or ""
+        record(results, "对话 API", len(content) > 0, f"回答长度 {len(content)}")
     except Exception as e:
         record(results, "对话 API", False, str(e)[:120])
 

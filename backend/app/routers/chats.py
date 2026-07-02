@@ -15,6 +15,7 @@ from app.services.chat_access import assert_chat_access, get_config_chat, is_exp
 from app.models import Chat, ChatDataset, ChatMessage, Dataset
 from app.services.builtin_experts import DEFAULT_LEGAL_SYSTEM
 from app.services.chat_context import build_chat_messages, finalize_assistant_answer
+from app.services.thinking_content import merge_thinking_parts, split_inline_thinking
 from app.services.chat_images import analyze_chat_image_content, get_chat_image_path, save_chat_image
 from app.services.answer_format import compose_answer
 from app.utils import strip_markdown
@@ -90,9 +91,17 @@ def _message_dict(m: ChatMessage, chat_id: str | None = None) -> dict:
         "id": m.id,
         "role": m.role,
         "content": m.content,
+        "thinking": m.thinking_content or "",
         "attachments": attachments,
         "feedback": m.feedback,
     }
+
+
+def _build_assistant_reply(raw_content: str, api_thinking: str, sources_body: str) -> tuple[str, str]:
+    inline_thinking, cleaned = split_inline_thinking(raw_content)
+    thinking = merge_thinking_parts(api_thinking, inline_thinking)
+    answer = finalize_assistant_answer(cleaned, sources_body)
+    return answer, thinking
 
 
 def _attachments_payload(chat_id: str, image_ids: list[str]) -> str:
@@ -490,12 +499,21 @@ async def chat_completion(
 
     if not body.stream:
         try:
-            raw = (await dashscope_client.chat_completion(messages)).rstrip()
-            answer = finalize_assistant_answer(raw, sources_body)
+            result = await dashscope_client.chat_completion(messages)
+            answer, thinking = _build_assistant_reply(
+                (result.get("content") or "").rstrip(),
+                result.get("thinking") or "",
+                sources_body,
+            )
         except Exception as e:
             return err(str(e))
         db.add(_create_user_message(chat_id, question, image_ids))
-        assistant_msg = ChatMessage(chat_id=chat_id, role="assistant", content=answer)
+        assistant_msg = ChatMessage(
+            chat_id=chat_id,
+            role="assistant",
+            content=answer,
+            thinking_content=thinking,
+        )
         db.add(assistant_msg)
         db.commit()
         db.refresh(assistant_msg)
@@ -513,12 +531,25 @@ async def chat_completion(
         db.add(_create_user_message(chat_id, question, image_ids))
         db.commit()
         parts: list[str] = []
+        thinking_parts: list[str] = []
         try:
-            async for token in dashscope_client.chat_completion_stream(messages):
-                parts.append(token)
-                yield _sse_event({"type": "delta", "content": token})
-            answer = finalize_assistant_answer("".join(parts), sources_body)
-            assistant_msg = ChatMessage(chat_id=chat_id, role="assistant", content=answer)
+            async for chunk in dashscope_client.chat_completion_stream(messages):
+                if chunk["kind"] == "thinking":
+                    thinking_parts.append(chunk["text"])
+                    yield _sse_event({"type": "thinking", "content": chunk["text"]})
+                else:
+                    parts.append(chunk["text"])
+            answer, thinking = _build_assistant_reply(
+                "".join(parts),
+                "".join(thinking_parts),
+                sources_body,
+            )
+            assistant_msg = ChatMessage(
+                chat_id=chat_id,
+                role="assistant",
+                content=answer,
+                thinking_content=thinking,
+            )
             db.add(assistant_msg)
             db.commit()
             db.refresh(assistant_msg)
@@ -530,7 +561,14 @@ async def chat_completion(
                     answer=answer,
                     assistant_message_id=assistant_msg.id,
                 )
-            yield _sse_event({"type": "done", "answer": answer, "message_id": assistant_msg.id})
+            yield _sse_event(
+                {
+                    "type": "done",
+                    "answer": answer,
+                    "thinking": thinking,
+                    "message_id": assistant_msg.id,
+                }
+            )
         except Exception as e:
             yield _sse_event({"type": "error", "message": str(e)})
 

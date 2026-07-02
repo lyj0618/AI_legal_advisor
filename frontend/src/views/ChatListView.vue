@@ -3,7 +3,7 @@
     <div class="kb-toolbar">
       <div>
         <h2>专家管理</h2>
-        <p style="font-size:12px;color:#94a3b8;margin-top:4px;">配置助手并绑定知识库；发布后咨询用户可在助手广场看到（模型：qwen-turbo）</p>
+        <p style="font-size:12px;color:#94a3b8;margin-top:4px;">配置助手并绑定知识库；发布后咨询用户可在助手广场看到</p>
       </div>
       <el-button type="primary" @click="showCreate = true">
         <el-icon><Plus /></el-icon> 创建助手

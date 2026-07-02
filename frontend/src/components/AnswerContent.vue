@@ -24,21 +24,44 @@
           v-show="!isSourcesSection(block) || sourcesExpanded"
           class="answer-section-body"
         >
-          {{ block.body }}
+          <AnswerBodyBlocks :body="block.body" />
         </div>
       </div>
     </template>
     <template v-else>
-      <span>{{ text }}</span>
+      <AnswerBodyBlocks :body="text" />
     </template>
     <span v-if="streaming" class="stream-cursor">▌</span>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, defineComponent, h, ref } from 'vue'
 import { ArrowDown } from '@element-plus/icons-vue'
-import { parseAnswerSections } from '@/utils/answerFormat'
+import { parseAnswerBodyParts, parseAnswerSections } from '@/utils/answerFormat'
+
+const AnswerBodyBlocks = defineComponent({
+  name: 'AnswerBodyBlocks',
+  props: {
+    body: { type: String, default: '' },
+  },
+  setup(props) {
+    const parts = computed(() => parseAnswerBodyParts(props.body || ''))
+    return () => {
+      if (!parts.value.length) return null
+      return parts.value.map((part, i) => {
+        if (part.type === 'list') {
+          return h(
+            'ul',
+            { class: 'answer-bullet-list', key: `list-${i}` },
+            part.items.map((item, j) => h('li', { key: j }, item)),
+          )
+        }
+        return h('p', { class: 'answer-para', key: `text-${i}` }, part.text)
+      })
+    }
+  },
+})
 
 const props = defineProps({
   text: { type: String, default: '' },
@@ -101,10 +124,49 @@ function isSourcesSection(block) {
   font-size: 14px;
   line-height: 1.65;
   color: #334155;
-  white-space: pre-wrap;
   word-break: break-word;
+}
+.answer-section-body :deep(.answer-para) {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+}
+.answer-section-body :deep(.answer-para:last-child) {
+  margin-bottom: 0;
+}
+.answer-section-body :deep(.answer-bullet-list) {
+  margin: 4px 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.answer-section-body :deep(.answer-bullet-list li) {
+  position: relative;
+  padding-left: 14px;
+  margin-bottom: 6px;
+  line-height: 1.65;
+}
+.answer-section-body :deep(.answer-bullet-list li:last-child) {
+  margin-bottom: 0;
+}
+.answer-section-body :deep(.answer-bullet-list li::before) {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.58em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #475569;
 }
 .answer-section-title--toggle + .answer-section-body {
   margin-top: 6px;
+}
+.stream-cursor {
+  display: inline-block;
+  color: #2563eb;
+  animation: blink 1s step-end infinite;
+  margin-left: 2px;
+}
+@keyframes blink {
+  50% { opacity: 0; }
 }
 </style>

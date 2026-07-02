@@ -140,5 +140,5 @@ async def analyze_chat_image_content(path: Path) -> str:
             ],
         }
     ]
-    raw = (await dashscope_client.chat_completion(messages, temperature=0.1)).strip()
+    raw = (await dashscope_client.chat_completion(messages, temperature=0.1))["content"].strip()
     return _clean_image_analysis(raw)

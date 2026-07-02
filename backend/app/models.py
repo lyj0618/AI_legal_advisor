@@ -117,6 +117,8 @@ class User(Base):
     password_hash = Column(String(128), nullable=False)
     role = Column(String(16), default="consultant")  # admin | consultant
     is_active = Column(Boolean, default=True)
+    question_bubble_color = Column(String(7), default="#2563eb")
+    answer_bubble_color = Column(String(7), default="#f1f5f9")
     create_date = Column(DateTime, default=_now)
 
 
@@ -127,6 +129,7 @@ class ChatMessage(Base):
     chat_id = Column(String(36), ForeignKey("chats.id"), nullable=False)
     role = Column(String(16), nullable=False)
     content = Column(Text, nullable=False)
+    thinking_content = Column(Text, default="")
     attachments_json = Column(Text, default="[]")
     feedback = Column(String(16), nullable=True)  # like | dislike
     create_date = Column(DateTime, default=_now)
