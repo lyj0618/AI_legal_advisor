@@ -1,12 +1,13 @@
 import json
-import math
 from typing import Any
 
 import numpy as np
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models import Chunk, Dataset, Document
 from app.services.dashscope import dashscope_client
+from app.services.vector_index import vector_index_service
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -19,19 +20,14 @@ def _cosine(a: list[float], b: list[float]) -> float:
     return float(np.dot(va, vb) / (na * nb))
 
 
-async def retrieve(
+async def _retrieve_brute_force(
     db: Session,
     dataset_ids: list[str],
-    question: str,
-    top_k: int = 5,
-    similarity_threshold: float = 0.2,
+    q_emb: list[float],
+    top_k: int,
+    similarity_threshold: float,
 ) -> list[dict[str, Any]]:
-    if not question.strip():
-        return []
-
-    q_emb = (await dashscope_client.embed_texts([question]))[0]
     results: list[dict[str, Any]] = []
-
     for ds_id in dataset_ids:
         ds = db.query(Dataset).filter(Dataset.id == ds_id).first()
         if not ds:
@@ -72,11 +68,94 @@ async def retrieve(
     return results[:top_k]
 
 
-def build_knowledge_context(chunks: list[dict[str, Any]]) -> str:
+async def _retrieve_with_index(
+    db: Session,
+    dataset_ids: list[str],
+    q_emb: list[float],
+    top_k: int,
+    similarity_threshold: float,
+) -> list[dict[str, Any]]:
+    hits = vector_index_service.search(
+        db,
+        dataset_ids,
+        q_emb,
+        top_k=top_k,
+        similarity_threshold=similarity_threshold,
+    )
+    if not hits:
+        return []
+
+    chunk_ids = [h[1] for h in hits]
+    chunk_rows = db.query(Chunk).filter(Chunk.id.in_(chunk_ids)).all()
+    chunk_map = {c.id: c for c in chunk_rows}
+
+    ds_map: dict[str, Dataset] = {}
+    doc_map: dict[str, Document] = {}
+    results: list[dict[str, Any]] = []
+
+    for sim, chunk_id, ds_id in hits:
+        ch = chunk_map.get(chunk_id)
+        if not ch or not ch.available:
+            continue
+        if ds_id not in ds_map:
+            ds = db.query(Dataset).filter(Dataset.id == ds_id).first()
+            if ds:
+                ds_map[ds_id] = ds
+        if ch.document_id not in doc_map:
+            doc = db.query(Document).filter(Document.id == ch.document_id).first()
+            if doc and doc.status == "1":
+                doc_map[ch.document_id] = doc
+            else:
+                continue
+        doc = doc_map.get(ch.document_id)
+        ds = ds_map.get(ds_id)
+        results.append(
+            {
+                "content": ch.content,
+                "similarity": sim,
+                "doc_name": doc.name if doc else "",
+                "dataset_id": ds_id,
+                "dataset_name": ds.name if ds else "",
+            }
+        )
+    return results
+
+
+async def retrieve(
+    db: Session,
+    dataset_ids: list[str],
+    question: str,
+    top_k: int = 5,
+    similarity_threshold: float = 0.2,
+) -> list[dict[str, Any]]:
+    if not question.strip():
+        return []
+
+    q_emb = (await dashscope_client.embed_texts([question]))[0]
+
+    if settings.use_vector_index:
+        try:
+            indexed = await _retrieve_with_index(
+                db, dataset_ids, q_emb, top_k, similarity_threshold
+            )
+            if indexed:
+                return indexed
+        except Exception:
+            pass
+
+    return await _retrieve_brute_force(
+        db, dataset_ids, q_emb, top_k, similarity_threshold
+    )
+
+
+def build_knowledge_context(chunks: list[dict[str, Any]], *, min_sim: float = 0.28) -> str:
     if not chunks:
         return ""
+    ranked = sorted(chunks, key=lambda x: float(x.get("similarity") or 0), reverse=True)
+    filtered = [c for c in ranked if float(c.get("similarity") or 0) >= min_sim]
+    use = filtered if filtered else ranked[:3]
     lines = []
-    for i, c in enumerate(chunks, 1):
+    for i, c in enumerate(use, 1):
         src = c.get("doc_name") or "未知文档"
         kb = c.get("dataset_name") or ""
         prefix = f"{kb} / " if kb else ""
@@ -84,28 +163,40 @@ def build_knowledge_context(chunks: list[dict[str, Any]]) -> str:
     return "\n\n".join(lines)
 
 
-def format_answer_sources(chunks: list[dict[str, Any]], *, has_kb: bool) -> str:
-    """生成附在回答正文之后的依据出处说明。"""
-    header = "\n\n---\n**回答依据出处**\n"
+SOURCE_DISPLAY_MIN_SIM = 0.35
+
+
+def format_answer_sources_body(chunks: list[dict[str, Any]], *, has_kb: bool) -> str:
+    """生成「回答依据出处」节正文（不含标题）。"""
     if not has_kb:
-        return (
-            header
-            + "\n本助手未绑定法律知识库，以上内容基于模型对中国法律法规的通用理解，仅供参考，不构成正式法律意见；重大事项请咨询执业律师。"
-        )
+        return "本助手未绑定知识库，以上内容基于模型通用知识生成，仅供参考；重要事项请核实原始资料或咨询专业人士。"
     if not chunks:
+        return "本次未在知识库中检索到与您问题高度相关的条目，以上内容结合模型知识生成，仅供参考；请补充资料或调整问法后重试。"
+
+    ranked = sorted(chunks, key=lambda x: float(x.get("similarity") or 0), reverse=True)
+    top_sim = float(ranked[0].get("similarity") or 0)
+    display = [c for c in ranked if float(c.get("similarity") or 0) >= SOURCE_DISPLAY_MIN_SIM]
+
+    if not display:
         return (
-            header
-            + "\n本次未在知识库中检索到与您问题高度相关的条目，以上内容结合模型法律知识生成，仅供参考；请补充制度/合同等材料或调整问法后重试。"
+            f"已检索知识库，最高相关度约为 {top_sim:.0%}，未发现与您问题直接相关的制度条文。"
+            "请勿将低相关检索结果当作结论依据；建议补充制度名称或向主管部门核实。"
         )
 
-    lines = [header]
-    for i, c in enumerate(chunks, 1):
+    lines: list[str] = []
+    for i, c in enumerate(display, 1):
         doc = c.get("doc_name") or "未知文档"
         kb = c.get("dataset_name") or ""
         sim = float(c.get("similarity") or 0)
         raw = (c.get("content") or "").strip().replace("\n", " ")
         excerpt = raw[:150] + ("…" if len(raw) > 150 else "")
         loc = f"知识库「{kb}」" if kb else "知识库"
-        lines.append(f"\n{i}. {loc} · 文档《{doc}》（相关度 {sim:.0%}）\n   > {excerpt}")
-    lines.append("\n\n*以上内容摘自知识库片段，仅供参考，不构成正式法律意见。*")
-    return "".join(lines)
+        lines.append(f"{i}. {loc} · 文档《{doc}》（相关度 {sim:.0%}）\n   {excerpt}")
+    lines.append("\n以上内容摘自知识库片段，仅供参考。")
+    return "\n".join(lines)
+
+
+def format_answer_sources(chunks: list[dict[str, Any]], *, has_kb: bool) -> str:
+    """兼容旧调用：带标题的完整出处段落。"""
+    body = format_answer_sources_body(chunks, has_kb=has_kb)
+    return f"\n\n---\n回答依据出处\n{body}" if body else ""

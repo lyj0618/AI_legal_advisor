@@ -1,5 +1,6 @@
 import json
 from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 
@@ -39,10 +40,21 @@ def format_dashscope_error(status_code: int, body: str, *, service: str = "模�
     return f"{service}服务异常（HTTP {status_code}）"
 
 
+def _messages_have_images(messages: list[dict[str, Any]]) -> bool:
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "image_url":
+                    return True
+    return False
+
+
 class DashScopeClient:
     def __init__(self):
         self.api_key = settings.dashscope_api_key
         self.chat_model = settings.chat_model
+        self.vision_model = settings.vision_model
         self.embedding_model = settings.embedding_model
 
     def _headers(self) -> dict[str, str]:
@@ -51,20 +63,28 @@ class DashScopeClient:
             "Content-Type": "application/json",
         }
 
+    def resolve_model(self, messages: list[dict[str, Any]]) -> str:
+        if _messages_have_images(messages):
+            return self.vision_model or self.chat_model
+        return self.chat_model
+
     async def chat_completion(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         temperature: float = 0.3,
+        *,
+        model: str | None = None,
     ) -> str:
         if not self.api_key:
             raise ValueError("未配置 DASHSCOPE_API_KEY，请在 backend/.env 中设置")
 
+        use_model = model or self.resolve_model(messages)
         payload = {
-            "model": self.chat_model,
+            "model": use_model,
             "messages": messages,
             "temperature": temperature,
         }
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=180.0) as client:
             resp = await client.post(
                 f"{DASHSCOPE_BASE}/chat/completions",
                 headers=self._headers(),
@@ -77,19 +97,22 @@ class DashScopeClient:
 
     async def chat_completion_stream(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         temperature: float = 0.3,
+        *,
+        model: str | None = None,
     ) -> AsyncIterator[str]:
         if not self.api_key:
             raise ValueError("未配置 DASHSCOPE_API_KEY，请在 backend/.env 中设置")
 
+        use_model = model or self.resolve_model(messages)
         payload = {
-            "model": self.chat_model,
+            "model": use_model,
             "messages": messages,
             "temperature": temperature,
             "stream": True,
         }
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=180.0) as client:
             async with client.stream(
                 "POST",
                 f"{DASHSCOPE_BASE}/chat/completions",

@@ -1,7 +1,7 @@
 """端到端 API 流程测试。
 
 用法:
-  python scripts/e2e_test.py                    # 测运行中的服务 (默认 8000)
+  python scripts/e2e_test.py                    # 测运行中的服务 (默认 8002)
   python scripts/e2e_test.py --inprocess        # 进程内启动应用（推荐，使用最新代码与 .env）
 """
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 import httpx
@@ -42,6 +43,18 @@ class FlowTest:
         except Exception:
             return {"_raw": resp.text[:300]}
 
+    def wait_doc_field(self, dataset_id: str, doc_id: str, field: str, expected, timeout: float = 180.0):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            r = self.api("GET", f"/api/v1/datasets/{dataset_id}/documents")
+            body = self.json_body(r)
+            docs = (body.get("data") or {}).get("docs") or []
+            doc = next((d for d in docs if d.get("id") == doc_id), None)
+            if doc and doc.get(field) == expected:
+                return doc
+            time.sleep(2)
+        return None
+
     def run(self) -> int:
         # 1. 健康检查
         r = self.client.get(f"{self.base}/health")
@@ -57,13 +70,19 @@ class FlowTest:
         else:
             self.record("DashScope Key 已配置", True)
 
-        # 2. 登录
-        r = self.api("POST", "/api/v1/auth/login", json={"username": "admin", "password": "123456"})
-        body = self.json_body(r)
-        ok_login = body.get("code") == 0 and body.get("data", {}).get("access_token")
-        if ok_login:
-            self.token = body["data"]["access_token"]
-        self.record("登录 admin/123456", bool(ok_login), body.get("message", ""))
+        # 2. 登录（兼容新默认密码与旧库 123456）
+        ok_login = False
+        body = {}
+        for pwd in ("LegalAi@2026", "123456"):
+            r = self.api("POST", "/api/v1/auth/login", json={"username": "admin", "password": pwd})
+            body = self.json_body(r)
+            if body.get("code") == 0 and body.get("data", {}).get("access_token"):
+                self.token = body["data"]["access_token"]
+                ok_login = True
+                self.record(f"登录 admin/{pwd}", True, body.get("message", ""))
+                break
+        if not ok_login:
+            self.record("登录 admin", False, body.get("message", ""))
 
         # 3. /me
         r = self.api("GET", "/api/v1/auth/me")
@@ -108,9 +127,11 @@ class FlowTest:
                     json={"clean": "1"},
                 )
                 body = self.json_body(r)
+                started = body.get("code") == 0
+                cleaned_doc = self.wait_doc_field(dataset_id, doc_id, "clean_run", "1") if started else None
                 self.record(
                     "清洗文档",
-                    body.get("code") == 0 and body.get("data", {}).get("clean_run") == "1",
+                    bool(cleaned_doc),
                     body.get("message", ""),
                 )
                 r = self.api(
@@ -119,10 +140,12 @@ class FlowTest:
                     json={"run": "1"},
                 )
                 body = self.json_body(r)
-                chunk_count = body.get("data", {}).get("chunk_count", 0) if body.get("code") == 0 else 0
+                started_chunk = body.get("code") == 0
+                chunked_doc = self.wait_doc_field(dataset_id, doc_id, "run", "1") if started_chunk else None
+                chunk_count = (chunked_doc or {}).get("chunk_count", 0)
                 self.record(
                     "分块并嵌入",
-                    body.get("code") == 0 and chunk_count > 0,
+                    bool(chunked_doc) and chunk_count > 0,
                     f"chunks={chunk_count}, {body.get('message', '')}",
                 )
 
@@ -252,7 +275,7 @@ class InProcessClient:
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--base", default="http://127.0.0.1:8000")
+    p.add_argument("--base", default="http://127.0.0.1:8002")
     p.add_argument("--inprocess", action="store_true", help="在进程内加载 FastAPI 应用（使用 backend/.env）")
     args = p.parse_args()
 

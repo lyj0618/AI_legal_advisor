@@ -21,7 +21,9 @@ async def main():
             print("文档不存在:", doc_id)
             return 1
         print("rechunk:", doc.name, doc_id)
-        result = await datasets_router._chunk_document(db, doc)
+        from app.services.doc_tasks import run_chunk_task
+        await run_chunk_task(doc.dataset_id, doc.id)
+        result = {"code": 0}
         print(result)
         db2 = SessionLocal()
         n = db2.query(Document).filter(Document.id == doc_id).first().chunk_count

@@ -61,6 +61,18 @@ def _migrate_chats_columns():
         alters.append("ALTER TABLE documents ADD COLUMN clean_run VARCHAR(16) DEFAULT '0'")
     if "clean_progress" not in doc_cols:
         alters.append("ALTER TABLE documents ADD COLUMN clean_progress FLOAT DEFAULT 0")
+    if "timeliness_json" not in doc_cols:
+        alters.append("ALTER TABLE documents ADD COLUMN timeliness_json TEXT DEFAULT ''")
+    cur.execute("PRAGMA table_info(datasets)")
+    ds_cols = {row[1] for row in cur.fetchall()}
+    if "kb_type" not in ds_cols:
+        alters.append("ALTER TABLE datasets ADD COLUMN kb_type VARCHAR(16) DEFAULT 'legal'")
+    cur.execute("PRAGMA table_info(chat_messages)")
+    msg_cols = {row[1] for row in cur.fetchall()}
+    if "feedback" not in msg_cols:
+        alters.append("ALTER TABLE chat_messages ADD COLUMN feedback VARCHAR(16)")
+    if "attachments_json" not in msg_cols:
+        alters.append("ALTER TABLE chat_messages ADD COLUMN attachments_json TEXT DEFAULT '[]'")
     for sql in alters:
         cur.execute(sql)
     if alters:

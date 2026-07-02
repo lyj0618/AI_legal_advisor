@@ -21,11 +21,14 @@ async def main():
             if not any(k in (doc.name or "") for k in KEYWORDS):
                 continue
             print("===", doc.name, doc.id, "chunks=", doc.chunk_count)
-            await datasets_router._clean_document(db, doc)
+            from app.services.doc_tasks import run_clean_task
+            await run_clean_task(doc.dataset_id, doc.id)
             db2 = SessionLocal()
             doc = db2.query(Document).filter(Document.id == doc.id).first()
             db2.close()
-            result = await datasets_router._chunk_document(db, doc)
+            from app.services.doc_tasks import run_chunk_task
+            await run_chunk_task(doc.dataset_id, doc.id)
+            result = {"code": 0}
             print(" ", result.get("message"), (result.get("data") or {}).get("chunk_count"))
         return 0
     finally:

@@ -4,6 +4,12 @@ import { useAuthStore } from '@/stores/auth'
 
 const routes = [
   {
+    path: '/share/:token',
+    name: 'share',
+    meta: { public: true },
+    component: () => import('@/views/ShareView.vue'),
+  },
+  {
     path: '/login',
     name: 'login',
     component: () => import('@/views/LoginView.vue'),
@@ -16,6 +22,8 @@ const routes = [
     children: [
       { path: 'experts', name: 'experts', component: () => import('@/views/ExpertsView.vue') },
       { path: 'users', name: 'users', meta: { adminOnly: true }, component: () => import('@/views/UsersView.vue') },
+      { path: 'stats', name: 'stats', meta: { adminOnly: true }, component: () => import('@/views/StatsView.vue') },
+      { path: 'qa-records', name: 'qaRecords', meta: { adminOnly: true }, component: () => import('@/views/QaRecordsView.vue') },
       { path: 'kb', name: 'kb', meta: { adminOnly: true }, component: () => import('@/views/KbListView.vue') },
       { path: 'kb/:id', name: 'kbDetail', meta: { adminOnly: true }, component: () => import('@/views/KbDetailView.vue') },
       { path: 'chat', name: 'chat', meta: { adminOnly: true }, component: () => import('@/views/ChatListView.vue') },
@@ -29,7 +37,7 @@ const router = createRouter({
   routes,
 })
 
-const ADMIN_ROUTES = new Set(['kb', 'kbDetail', 'chat', 'users'])
+const ADMIN_ROUTES = new Set(['kb', 'kbDetail', 'chat', 'users', 'stats', 'qaRecords'])
 
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
@@ -58,6 +66,19 @@ router.beforeEach(async (to) => {
     }
   }
   return true
+})
+
+router.afterEach(async (to) => {
+  const auth = useAuthStore()
+  if (!auth.isLoggedIn || !auth.isAdmin) return
+  const { useAppStore } = await import('@/stores/app')
+  const store = useAppStore()
+  if (to.name === 'kb' || to.name === 'kbDetail') {
+    await store.fetchDatasets()
+  }
+  if (to.name === 'chat') {
+    await store.fetchChats()
+  }
 })
 
 export default router

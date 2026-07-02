@@ -19,7 +19,7 @@ def request(method, path, payload=None, token=None):
 
 
 def main():
-    login = request("POST", "/api/v1/auth/login", {"username": "admin", "password": "123456"})
+    login = request("POST", "/api/v1/auth/login", {"username": "admin", "password": "LegalAi@2026"})
     token = login["data"]["access_token"]
     body = request(
         "PUT",

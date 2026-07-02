@@ -6,17 +6,17 @@
         <div class="sidebar-header">
           <div class="sidebar-logo">⚖</div>
           <div>
-            <div class="sidebar-title">AI 法律顾问</div>
-            <div class="sidebar-subtitle">智能法务助手 · qwen-turbo</div>
+            <div class="sidebar-title">AI 智能助手</div>
+            <div class="sidebar-subtitle">企业知识问答 · qwen-turbo</div>
           </div>
         </div>
         <div class="sidebar-menus">
           <div class="menu-item" :class="{ active: isActive('experts') }" @click="$router.push('/experts')">
-            <el-icon><User /></el-icon> 法律顾问团
+            <el-icon><User /></el-icon> 助手广场
           </div>
           <template v-if="auth.isAdmin">
             <div class="menu-item" :class="{ active: isActive('kb') }" @click="$router.push('/kb')">
-              <el-icon><Collection /></el-icon> 法律知识库
+              <el-icon><Collection /></el-icon> 知识库
               <span class="kb-badge">{{ store.kbDatasets.length }}</span>
             </div>
             <div class="menu-item" :class="{ active: isActive('chat') }" @click="$router.push('/chat')">
@@ -25,29 +25,33 @@
             <div class="menu-item" :class="{ active: isActive('users') }" @click="$router.push('/users')">
               <el-icon><Avatar /></el-icon> 用户管理
             </div>
+            <div class="menu-item" :class="{ active: isActive('stats') }" @click="$router.push('/stats')">
+              <el-icon><DataAnalysis /></el-icon> 运营统计
+            </div>
+            <div class="menu-item" :class="{ active: isActive('qaRecords') }" @click="$router.push('/qa-records')">
+              <el-icon><Notebook /></el-icon> 问答库
+            </div>
           </template>
         </div>
-        <template v-if="auth.isAdmin">
-          <div class="sidebar-divider" />
-          <div class="sidebar-history">
-            <div style="font-size:11px;color:#c0c8d4;padding:0 8px 8px;font-weight:600;">最近咨询</div>
-            <div
-              v-for="c in store.recentChats"
-              :key="c.id"
-              class="history-item"
-              :class="{ active: route.name === 'chatDetail' && route.params.id === c.id }"
-              @click="$router.push(`/chat/${c.id}`)"
-            >
-              {{ c.name }}
-            </div>
-            <div v-if="!store.recentChats.length" style="text-align:center;padding:30px 16px;color:#94a3b8;font-size:12px;">
-              暂无咨询记录<br />点击下方开始新咨询
-            </div>
+        <div class="sidebar-divider" />
+        <div class="sidebar-history">
+          <div style="font-size:11px;color:#c0c8d4;padding:0 8px 8px;font-weight:600;">最近咨询</div>
+          <div
+            v-for="c in store.recentChats"
+            :key="c.id"
+            class="history-item"
+            :class="{ active: route.name === 'chatDetail' && route.params.id === c.id }"
+            @click="$router.push(`/chat/${c.id}`)"
+          >
+            {{ c.name }}
           </div>
-        </template>
+          <div v-if="!store.recentChats.length" style="text-align:center;padding:30px 16px;color:#94a3b8;font-size:12px;">
+            暂无咨询记录<br />请从助手广场选择助手开始咨询
+          </div>
+        </div>
         <div v-if="auth.isAdmin" class="sidebar-footer">
           <button class="new-chat-btn" @click="handleNewChat">
-            <span>+</span> 新建咨询
+            <span>+</span> 去助手广场
           </button>
         </div>
       </template>
@@ -120,6 +124,7 @@ function isActive(name) {
   if (name === 'experts') return route.name === 'experts' || (!auth.isAdmin && route.name === 'chatDetail')
   if (name === 'chat') return route.name === 'chat' || route.name === 'chatDetail'
   if (name === 'kb') return route.name === 'kb' || route.name === 'kbDetail'
+  if (name === 'qaRecords') return route.name === 'qaRecords'
   return route.name === name
 }
 
@@ -138,7 +143,7 @@ function goBackKb() {
 }
 
 function handleNewChat() {
-  router.push('/chat')
+  router.push('/experts')
 }
 
 function logout() {

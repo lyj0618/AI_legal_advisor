@@ -13,6 +13,12 @@ def ensure_builtin_expert_templates(db: Session) -> None:
             .first()
         )
         if exists:
+            exists.name = e["name"]
+            exists.description = e["desc"]
+            exists.expert_role = e["role"]
+            if e.get("color"):
+                exists.color = e["color"]
+            db.commit()
             continue
         db.add(
             Chat(

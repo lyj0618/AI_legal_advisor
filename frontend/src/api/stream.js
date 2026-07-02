@@ -4,17 +4,19 @@ const TOKEN_KEY = 'access_token'
  * SSE 流式对话补全
  * @param {string} chatId
  * @param {string} question
- * @param {{ onDelta?: (t:string)=>void, onDone?: (answer:string)=>void, onError?: (e:Error)=>void }} handlers
+ * @param {{ onDelta?: (t:string, full:string)=>void, onDone?: (answer:string, messageId?:number)=>void, onError?: (e:Error)=>void }} handlers
+ * @param {{ imageIds?: string[] }} options
  */
-export async function completionStream(chatId, question, handlers = {}) {
+export async function completionStream(chatId, question, handlers = {}, options = {}) {
   const token = localStorage.getItem(TOKEN_KEY)
+  const imageIds = options.imageIds || []
   const res = await fetch(`/api/v1/chats/${chatId}/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ question, stream: true }),
+    body: JSON.stringify({ question, stream: true, image_ids: imageIds }),
   })
 
   if (res.status === 401) {
@@ -68,7 +70,7 @@ export async function completionStream(chatId, question, handlers = {}) {
           handlers.onDelta?.(evt.content, full)
         } else if (evt.type === 'done') {
           full = evt.answer || full
-          handlers.onDone?.(full)
+          handlers.onDone?.(full, evt.message_id)
         } else if (evt.type === 'error') {
           throw new Error(evt.message || '流式输出失败')
         }

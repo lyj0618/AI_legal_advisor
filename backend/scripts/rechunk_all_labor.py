@@ -22,7 +22,8 @@ async def main():
             n = doc.chunk_count or 0
             if n > 0 and n < 50:
                 print("rechunk", doc.name, doc.id, "was", n)
-                await datasets_router._chunk_document(db, doc)
+                from app.services.doc_tasks import run_chunk_task
+                await run_chunk_task(doc.dataset_id, doc.id)
                 db2 = SessionLocal()
                 fresh = db2.query(Document).filter(Document.id == doc.id).first()
                 print("  ->", fresh.chunk_count if fresh else "?")

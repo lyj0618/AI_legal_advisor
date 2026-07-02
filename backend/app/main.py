@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.routers import auth, chats, datasets, experts, retrieval, users
+from app.routers import auth, chats, datasets, experts, qa_records, retrieval, stats, users, ws
 
 
 @asynccontextmanager
@@ -15,8 +15,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="AI 法律顾问助手 API",
-    description="基于 qwen-turbo 的法律顾问助手后端",
+    title="AI 智能知识助手 API",
+    description="基于 qwen-turbo 的多行业知识问答后端",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -35,6 +35,9 @@ app.include_router(chats.router)
 app.include_router(retrieval.router)
 app.include_router(experts.router)
 app.include_router(users.router)
+app.include_router(stats.router)
+app.include_router(qa_records.router)
+app.include_router(ws.router)
 
 
 from app.services.chunking import CHUNKING_VERSION
@@ -45,7 +48,10 @@ def health():
     return {
         "status": "ok",
         "model": settings.chat_model,
+        "vision_model": settings.vision_model,
         "embedding_model": settings.embedding_model,
         "dashscope_configured": bool(settings.dashscope_api_key.strip()),
         "chunking_version": CHUNKING_VERSION,
+        "vector_index": settings.use_vector_index,
+        "async_doc_tasks": True,
     }

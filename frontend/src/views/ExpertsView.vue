@@ -1,8 +1,8 @@
 <template>
   <div class="center-content">
     <div class="experts-header">
-      <h2>法律顾问团</h2>
-      <p>选择专业领域的 AI 法律顾问，基于 qwen-turbo 与法律知识库为您提供咨询（仅供参考，不构成正式法律意见）</p>
+      <h2>助手广场</h2>
+      <p>选择行业领域的 AI 助手，基于 qwen-turbo 与知识库为您提供智能问答（仅供参考，重要事项请核实原始资料）</p>
     </div>
     <el-empty v-if="!store.experts.length" description="暂无可咨询专家，请联系管理员配置并发布已绑定知识库的专家" />
     <div v-else class="experts-grid">
@@ -40,9 +40,11 @@ import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
 import { api } from '@/api'
 
 const store = useAppStore()
+const auth = useAuthStore()
 const router = useRouter()
 
 onMounted(() => store.fetchExperts())
@@ -50,6 +52,7 @@ onMounted(() => store.fetchExperts())
 async function summon(e) {
   try {
     const { session_id } = await api.consultExpert(e.id)
+    store.addRecentConsultation({ id: session_id, name: e.name }, auth.username)
     router.push({ name: 'chatDetail', params: { id: session_id }, query: { tab: 'dialog' } })
   } catch (err) {
     ElMessage.error(err.message || '无法开始咨询')

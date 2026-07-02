@@ -16,7 +16,7 @@ onMounted(async () => {
   auth.restore()
   if (auth.isLoggedIn && route.name !== 'login') {
     if (!auth.role) await auth.fetchMe()
-    await store.init(auth.isAdmin)
+    await store.init(auth.isAdmin, auth.username)
   }
 })
 </script>

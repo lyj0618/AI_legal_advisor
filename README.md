@@ -45,8 +45,8 @@ pip install -r requirements.txt
 python run.py
 ```
 
-后端地址：`http://127.0.0.1:8000`  
-健康检查：`http://127.0.0.1:8000/health`
+后端地址：`http://127.0.0.1:8002`（与 `frontend/vite.config.js` 代理一致）  
+健康检查：`http://127.0.0.1:8002/health`
 
 `python run.py` 已开启 `--reload`，保存代码后会自动热重载。若端口被占用或需强制重启：
 
@@ -64,7 +64,10 @@ npm run dev
 
 浏览器打开：`http://localhost:5173`
 
-**默认登录账号**：`admin` / `123456`（可在 `backend/.env` 中修改 `AUTH_USERNAME`、`AUTH_PASSWORD`）
+**默认登录账号**：`admin` / `LegalAi@2026`（首次启动自动创建；可在 `backend/.env` 修改 `AUTH_USERNAME`、`AUTH_PASSWORD`）  
+若你此前已初始化过数据库，旧密码 `123456` 仍可能有效，直到你手动改密或重建库。
+
+**安全提示**：请勿将真实 `DASHSCOPE_API_KEY` 提交到 Git；若曾泄露请立即在阿里云控制台轮换 Key。
 
 ## 推荐使用流程
 
@@ -82,6 +85,7 @@ npm run dev
 - **流式对话**：`POST /chats/{id}/completions` 默认 `stream: true`，返回 SSE（`text/event-stream`）
 - **Word 解析**：使用 `python-docx` 提取段落与表格文本；旧版 `.doc` 请另存为 `.docx`
 - **认证**：除 `/api/v1/auth/login`、`/health` 外，接口需 `Authorization: Bearer <token>`
+- **上传限制**：单文件默认最大 50 MB，仅支持 txt / md / pdf / csv / docx（可在 `.env` 调整）
 
 ## 免责声明
 

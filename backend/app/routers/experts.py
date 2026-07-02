@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -8,7 +8,7 @@ from app.deps import CurrentUser, require_auth
 from app.models import Chat, ChatDataset, Dataset
 from app.services.builtin_experts import DEFAULT_LEGAL_SYSTEM
 from app.services.chat_access import assert_chat_access, is_expert_template, template_has_kb
-from app.utils import new_id, ok, err, parse_json_field
+from app.utils import new_id, ok, err, parse_json_field, paginate_query, paginated_data
 
 router = APIRouter(prefix="/api/v1", tags=["experts"], dependencies=[Depends(require_auth)])
 
@@ -24,7 +24,7 @@ def _template_dict(chat: Chat, db: Session, *, include_publish: bool) -> dict:
     item = {
         "id": chat.id,
         "name": chat.name,
-        "role": chat.expert_role or "法律顾问",
+        "role": chat.expert_role or "智能助手",
         "desc": chat.description or f"已绑定：{', '.join(kb_names)}",
         "color": chat.color or CHAT_COLORS[0],
         "avatarFile": "__chat__",
@@ -39,7 +39,12 @@ def _template_dict(chat: Chat, db: Session, *, include_publish: bool) -> dict:
 
 
 @router.get("/experts")
-def list_experts(db: Session = Depends(get_db), user: CurrentUser = Depends(require_auth)):
+def list_experts(
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(require_auth),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=500),
+):
     templates = (
         db.query(Chat)
         .filter(Chat.owner_username.is_(None), Chat.template_id.is_(None))
@@ -58,7 +63,10 @@ def list_experts(db: Session = Depends(get_db), user: CurrentUser = Depends(requ
             item["color"] = CHAT_COLORS[color_idx % len(CHAT_COLORS)]
         experts.append(item)
         color_idx += 1
-    return ok(experts)
+    total = len(experts)
+    start = (page - 1) * page_size
+    items = experts[start : start + page_size]
+    return ok(paginated_data(items, total, page, page_size))
 
 
 def _resolve_template(db: Session, template_id: str) -> Chat | None:
@@ -110,8 +118,8 @@ def start_consult(
         prompt["variables"] = [{"key": "knowledge", "optional": True}]
     if not prompt.get("opener"):
         prompt["opener"] = (
-            f"您好，我是{template.name}，专注{template.expert_role or '法律咨询'}。"
-            "请问有什么法律问题需要咨询？"
+            f"您好，我是{template.name}，专注{template.expert_role or '知识问答'}。"
+            "请问有什么可以帮您？"
         )
 
     session = Chat(

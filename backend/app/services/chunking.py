@@ -28,8 +28,12 @@ def extract_text(file_path: Path, name: str) -> str:
         try:
             from pypdf import PdfReader
 
+            from app.services.pdf_ocr import extract_pdf_text_with_ocr_fallback
+
             reader = PdfReader(str(file_path))
-            return "\n".join(page.extract_text() or "" for page in reader.pages)
+            plain = "\n".join(page.extract_text() or "" for page in reader.pages)
+            text, _source = extract_pdf_text_with_ocr_fallback(file_path, plain)
+            return text
         except Exception as e:
             raise ValueError(f"PDF 解析失败: {e}") from e
     if suffix in (".docx", ".doc"):

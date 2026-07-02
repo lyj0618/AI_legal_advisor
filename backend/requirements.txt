@@ -7,6 +7,11 @@ sqlalchemy>=2.0.25
 httpx>=0.26.0
 python-dotenv>=1.0.0
 numpy>=1.26.0
+faiss-cpu>=1.7.4
+# 可选：扫描 PDF OCR（pip install pymupdf pytesseract Pillow + 系统 Tesseract chi_sim）
+pymupdf>=1.23.0
+pytesseract>=0.3.10
+Pillow>=10.0.0
 pypdf>=4.0.0
 python-docx>=1.1.0
 beautifulsoup4>=4.12.0

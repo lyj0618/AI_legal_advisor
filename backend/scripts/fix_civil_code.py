@@ -18,9 +18,12 @@ async def main():
             if "民法典" not in (doc.name or "") and "bd53" not in (doc.location or ""):
                 continue
             print("clean", doc.id, doc.name, "was", doc.chunk_count)
-            await datasets_router._clean_document(db, doc)
+            from app.services.doc_tasks import run_clean_task
+            await run_clean_task(doc.dataset_id, doc.id)
             d = db.query(Document).filter(Document.id == doc.id).first()
-            r = await datasets_router._chunk_document(db, d)
+            from app.services.doc_tasks import run_chunk_task
+            await run_chunk_task(d.dataset_id, d.id)
+            r = {"code": 0}
             print(" ", r.get("message"), (r.get("data") or {}).get("chunk_count"))
     finally:
         db.close()

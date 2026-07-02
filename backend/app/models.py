@@ -17,6 +17,7 @@ class Dataset(Base):
     id = Column(String(36), primary_key=True)
     name = Column(String(200), nullable=False)
     description = Column(Text, default="")
+    kb_type = Column(String(16), default="legal")  # legal | case
     embedding_model = Column(String(120), default="text-embedding-v2")
     chunk_method = Column(String(32), default="naive")
     permission = Column(String(16), default="me")
@@ -51,6 +52,7 @@ class Document(Base):
     cleaned_location = Column(String(1000), default="")
     clean_run = Column(String(16), default="0")  # 0 待清洗 / RUNNING 清洗中 / 1 已清洗
     clean_progress = Column(Float, default=0.0)
+    timeliness_json = Column(Text, default="")
     status = Column(String(4), default="1")
     chunk_method = Column(String(32), default="naive")
     chunk_count = Column(Integer, default=0)
@@ -125,6 +127,28 @@ class ChatMessage(Base):
     chat_id = Column(String(36), ForeignKey("chats.id"), nullable=False)
     role = Column(String(16), nullable=False)
     content = Column(Text, nullable=False)
+    attachments_json = Column(Text, default="[]")
+    feedback = Column(String(16), nullable=True)  # like | dislike
     create_date = Column(DateTime, default=_now)
 
     chat = relationship("Chat", back_populates="messages")
+
+
+class QaRecord(Base):
+    """问答对缓存：高置信度命中时直接返回答案。"""
+
+    __tablename__ = "qa_records"
+
+    id = Column(String(36), primary_key=True)
+    template_id = Column(String(36), nullable=True, index=True)
+    chat_id = Column(String(36), nullable=True)
+    assistant_message_id = Column(Integer, nullable=True, unique=True, index=True)
+    question = Column(Text, nullable=False)
+    question_norm = Column(String(500), default="", index=True)
+    answer = Column(Text, nullable=False)
+    confidence = Column(String(16), default="low")  # high | low
+    feedback = Column(String(16), nullable=True)  # like | dislike
+    question_embedding = Column(Text, default="")
+    hit_count = Column(Integer, default=0)
+    create_date = Column(DateTime, default=_now)
+    update_date = Column(DateTime, default=_now, onupdate=_now)

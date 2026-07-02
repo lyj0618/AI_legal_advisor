@@ -3,8 +3,8 @@
     <div class="login-container">
       <div class="login-header">
         <div class="login-logo">⚖</div>
-        <h1 class="login-title">AI 法律顾问助手</h1>
-        <p class="login-subtitle">智能法务咨询平台 · qwen-turbo</p>
+        <h1 class="login-title">AI 智能知识助手</h1>
+        <p class="login-subtitle">多行业知识问答平台 · qwen-turbo</p>
       </div>
 
       <el-form ref="formRef" :model="form" :rules="rules" class="login-form" @submit.prevent="handleLogin">
@@ -34,8 +34,9 @@
       </el-form>
 
       <div class="login-footer">
-        <p>默认账号：admin / 123456</p>
-        <p style="margin-top:6px;">© 2024 AI 法律顾问助手</p>
+        <p>新环境默认：admin / LegalAi@2026</p>
+        <p style="margin-top:4px;">已有数据库可能仍为旧密码 123456</p>
+        <p style="margin-top:6px;">© 2024 AI 智能知识助手</p>
       </div>
     </div>
   </div>
