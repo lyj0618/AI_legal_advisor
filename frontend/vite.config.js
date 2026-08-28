@@ -18,10 +18,10 @@ export default defineConfig({
         ws: true,
         configure: (proxy) => {
           proxy.on('error', (err, _req, res) => {
-            console.error('[vite proxy] 后端不可达，请启动: uvicorn app.main:app --port 8002', err.message)
+            console.error('[vite proxy] 后端不可达，请启动: uvicorn app.main:app --port 8003', err.message)
             if (res && !res.headersSent) {
               res.writeHead(502, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ code: 1, message: '后端服务未启动，请在 8002 端口启动 API' }))
+              res.end(JSON.stringify({ code: 1, message: '后端服务未启动，请在 8003 端口启动 API' }))
             }
           })
         },

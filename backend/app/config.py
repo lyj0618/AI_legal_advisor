@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     vision_model: str = "qwen-vl-plus"
     embedding_model: str = "text-embedding-v3"
     host: str = "127.0.0.1"
-    port: int = 8002
+    port: int = 8003
     data_dir: str = "./data"
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 

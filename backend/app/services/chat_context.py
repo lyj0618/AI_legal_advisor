@@ -55,12 +55,23 @@ async def build_chat_messages(
     knowledge = build_knowledge_context(chunks)
     sources_body = format_answer_sources_body(chunks, has_kb=bool(kb_ids))
 
-    # 收集检索命中分块所引用的文档内嵌图片 URL（顺序、去重）
+    # 只展示与问题高相关的分块所引用的截图：
+    # 按相关度降序取，相似度低于阈值的分块不展示其截图，并限制最多 N 张，
+    # 避免把不相关条目的截图堆砌给用户。
+    DOC_IMAGE_MIN_SIM = 0.35
+    DOC_IMAGE_MAX = 3
     doc_image_urls: list[str] = []
-    for c in chunks:
+    ranked = sorted(chunks, key=lambda x: float(x.get("similarity") or 0), reverse=True)
+    for c in ranked:
+        if float(c.get("similarity") or 0) < DOC_IMAGE_MIN_SIM:
+            break
         for u in (c.get("images") or []):
             if u and u not in doc_image_urls:
                 doc_image_urls.append(u)
+                if len(doc_image_urls) >= DOC_IMAGE_MAX:
+                    break
+        if len(doc_image_urls) >= DOC_IMAGE_MAX:
+            break
 
     system_tpl = prompt_cfg.get("prompt") or DEFAULT_LEGAL_SYSTEM
     if "{knowledge}" in system_tpl:
