@@ -44,16 +44,23 @@ def _associate_images(parts: list[str], image_marks: list[str]) -> list[tuple[st
     return result
 
 
-def _load_image_marks(cleaned_path: Path, doc_id: str) -> list[str]:
-    """读取清洗阶段落盘的图片名 sidecar 文件。"""
+def _load_image_sidecar(cleaned_path: Path, doc_id: str) -> tuple[list[str], list[list[str]]]:
+    """读取清洗阶段落盘的图片名 sidecar 文件，返回 (全部图片, 按章节归类的图片)。"""
     sidecar = cleaned_path.parent / f"{doc_id}_images.json"
     if not sidecar.exists():
-        return []
+        return [], []
     try:
         data = json.loads(sidecar.read_text(encoding="utf-8"))
-        return data if isinstance(data, list) else []
+        if isinstance(data, list):
+            # 兼容旧格式
+            return data, []
+        if isinstance(data, dict):
+            marks = data.get("image_marks", [])
+            sections = data.get("image_sections", [])
+            return marks, sections
     except Exception:
-        return []
+        pass
+    return [], []
 
 
 async def run_clean_task(dataset_id: str, doc_id: str) -> None:
@@ -71,7 +78,7 @@ async def run_clean_task(dataset_id: str, doc_id: str) -> None:
         file_name = doc.name
 
         def _cpu_clean():
-            raw_text, image_marks = extract_text_with_images(file_path, file_name, doc_id)
+            raw_text, image_marks, image_sections = extract_text_with_images(file_path, file_name, doc_id)
             clean_opts = {**DEFAULT_CLEAN_OPTIONS, **(parser_config.get("clean_options") or {})}
             ch = reload_chunking_module()
             cleaned = clean_document_text(raw_text, clean_opts)
@@ -79,9 +86,13 @@ async def run_clean_task(dataset_id: str, doc_id: str) -> None:
             timeliness = analyze_legal_timeliness(cleaned)
             cleaned_path = file_path.parent / f"{doc_id}_cleaned.txt"
             cleaned_path.write_text(cleaned, encoding="utf-8")
-            # 落盘图片名 sidecar，供分块步骤关联
+            # 落盘图片名 sidecar（含章节分组），供分块步骤把截图归到对应问题条目
             image_sidecar = cleaned_path.parent / f"{doc_id}_images.json"
-            image_sidecar.write_text(json.dumps(image_marks, ensure_ascii=False), encoding="utf-8")
+            sidecar_payload = {
+                "image_marks": image_marks,
+                "image_sections": image_sections,
+            }
+            image_sidecar.write_text(json.dumps(sidecar_payload, ensure_ascii=False), encoding="utf-8")
             return cleaned_path, timeliness
 
         cleaned_path, timeliness = await asyncio.to_thread(_cpu_clean)
@@ -147,17 +158,21 @@ async def run_chunk_task(dataset_id: str, doc_id: str) -> None:
             if not parts:
                 raise ValueError("分块结果为空")
             if strategy == "legal_article" and not ch.validate_legal_chunk_parts(parts, prepared):
-                # 该文档并非标准法条结构，法条切片校验不过；回退通用分块，避免整篇分块失败
-                strategy = "naive"
+                # 该文档并非标准法条结构，法条切片校验不过；优先按编号章节切片，否则回退通用分块
+                fallback_strategy = "numbered_section" if ch._has_numbered_sections(cleaned) else "naive"
+                strategy = fallback_strategy
                 parts = ch.split_chunks(
                     cleaned,
                     chunk_token_num=int(parser_config.get("chunk_token_num", 512)),
                     delimiter=parser_config.get("delimiter") or "",
-                    chunk_strategy="naive",
+                    chunk_strategy=fallback_strategy,
                 )
                 if not parts:
                     raise ValueError("分块结果为空（通用分块仍失败）")
-            image_marks = _load_image_marks(cleaned_path, doc_id)
+            image_marks, image_sections = _load_image_sidecar(cleaned_path, doc_id)
+            # 如果章节分组与分块数量一致，直接把每章节的图片归到对应分块
+            if image_sections and len(image_sections) == len(parts):
+                return [(part, imgs) for part, imgs in zip(parts, image_sections)]
             return _associate_images(parts, image_marks)
 
         parts_with_images = await asyncio.to_thread(_cpu_split)
