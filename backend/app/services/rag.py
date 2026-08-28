@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any
 
 import numpy as np
@@ -8,6 +9,31 @@ from app.config import settings
 from app.models import Chunk, Dataset, Document
 from app.services.dashscope import dashscope_client
 from app.services.vector_index import vector_index_service
+
+
+_ISSUE_RE = re.compile(
+    r"^(?P<num>\d+(?:\.\d+)*)\s+(?P<title>.+?)\s+问题定位[:：]\s*(?P<location>.+?)(?:\s+问题自查[:：]\s*(?P<selfcheck>.+))?$",
+    re.DOTALL,
+)
+
+
+def _format_source_excerpt(raw: str) -> str:
+    """将编号条目内容格式化为「编号标题 / 问题定位 / 问题自查」结构。"""
+    text = raw.strip().replace("\n", " ")
+    m = _ISSUE_RE.match(text)
+    if m:
+        num = m.group("num")
+        title = m.group("title").strip()
+        location = m.group("location").strip()
+        selfcheck = (m.group("selfcheck") or "").strip()
+        parts = [f"{num} {title}"]
+        if location:
+            parts.append(f"问题定位：{location}")
+        if selfcheck:
+            parts.append(f"问题自查：{selfcheck}")
+        return "\n   ".join(parts)
+    excerpt = text[:150] + ("…" if len(text) > 150 else "")
+    return excerpt
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -205,8 +231,8 @@ def format_answer_sources_body(chunks: list[dict[str, Any]], *, has_kb: bool) ->
         doc = c.get("doc_name") or "未知文档"
         kb = c.get("dataset_name") or ""
         sim = float(c.get("similarity") or 0)
-        raw = (c.get("content") or "").strip().replace("\n", " ")
-        excerpt = raw[:150] + ("…" if len(raw) > 150 else "")
+        raw = (c.get("content") or "").strip()
+        excerpt = _format_source_excerpt(raw)
         loc = f"知识库「{kb}」" if kb else "知识库"
         lines.append(f"{i}. {loc} · 文档《{doc}》（相关度 {sim:.0%}）\n   {excerpt}")
     lines.append("\n以上内容摘自知识库片段，仅供参考。")
