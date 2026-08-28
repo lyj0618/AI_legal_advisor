@@ -91,6 +91,7 @@ def _message_dict(m: ChatMessage, chat_id: str | None = None) -> dict:
         "role": m.role,
         "content": m.content,
         "attachments": attachments,
+        "images": parse_json_field(m.images) if m.images else [],
         "feedback": m.feedback,
     }
 
@@ -430,6 +431,7 @@ async def _stream_cached_answer(chat_id: str, question: str, cached_answer: str,
             "answer": cached_answer,
             "message_id": assistant_msg.id,
             "from_cache": True,
+            "doc_images": [],
         }
     )
 
@@ -469,7 +471,7 @@ async def chat_completion(
                 answer=answer,
                 assistant_message_id=assistant_msg.id,
             )
-            return ok({"answer": answer, "message_id": assistant_msg.id, "from_cache": True})
+            return ok({"answer": answer, "message_id": assistant_msg.id, "from_cache": True, "doc_images": []})
 
         return StreamingResponse(
             _stream_cached_answer(chat_id, question, answer, db),
@@ -482,7 +484,7 @@ async def chat_completion(
         )
 
     try:
-        messages, sources_body = await build_chat_messages(
+        messages, sources_body, doc_image_urls = await build_chat_messages(
             db, chat, question, image_ids=image_ids
         )
     except Exception as e:
@@ -495,7 +497,12 @@ async def chat_completion(
         except Exception as e:
             return err(str(e))
         db.add(_create_user_message(chat_id, question, image_ids))
-        assistant_msg = ChatMessage(chat_id=chat_id, role="assistant", content=answer)
+        assistant_msg = ChatMessage(
+            chat_id=chat_id,
+            role="assistant",
+            content=answer,
+            images=json.dumps(doc_image_urls, ensure_ascii=False),
+        )
         db.add(assistant_msg)
         db.commit()
         db.refresh(assistant_msg)
@@ -507,7 +514,7 @@ async def chat_completion(
                 answer=answer,
                 assistant_message_id=assistant_msg.id,
             )
-        return ok({"answer": answer, "message_id": assistant_msg.id})
+        return ok({"answer": answer, "message_id": assistant_msg.id, "doc_images": doc_image_urls})
 
     async def event_generator():
         db.add(_create_user_message(chat_id, question, image_ids))
@@ -518,7 +525,12 @@ async def chat_completion(
                 parts.append(token)
                 yield _sse_event({"type": "delta", "content": token})
             answer = finalize_assistant_answer("".join(parts), sources_body)
-            assistant_msg = ChatMessage(chat_id=chat_id, role="assistant", content=answer)
+            assistant_msg = ChatMessage(
+                chat_id=chat_id,
+                role="assistant",
+                content=answer,
+                images=json.dumps(doc_image_urls, ensure_ascii=False),
+            )
             db.add(assistant_msg)
             db.commit()
             db.refresh(assistant_msg)
@@ -530,7 +542,7 @@ async def chat_completion(
                     answer=answer,
                     assistant_message_id=assistant_msg.id,
                 )
-            yield _sse_event({"type": "done", "answer": answer, "message_id": assistant_msg.id})
+            yield _sse_event({"type": "done", "answer": answer, "message_id": assistant_msg.id, "doc_images": doc_image_urls})
         except Exception as e:
             yield _sse_event({"type": "error", "message": str(e)})
 

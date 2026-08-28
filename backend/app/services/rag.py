@@ -20,6 +20,21 @@ def _cosine(a: list[float], b: list[float]) -> float:
     return float(np.dot(va, vb) / (na * nb))
 
 
+def _chunk_image_urls(document_id: str, images_json: str) -> list[str]:
+    """解析 chunk.images（JSON 文件名数组）为可被前端拉取的原图 URL。"""
+    try:
+        fns = json.loads(images_json or "[]")
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(fns, list):
+        return []
+    urls: list[str] = []
+    for fn in fns:
+        if fn:
+            urls.append(f"/api/v1/documents/{document_id}/images/{fn}")
+    return urls
+
+
 async def _retrieve_brute_force(
     db: Session,
     dataset_ids: list[str],
@@ -61,6 +76,7 @@ async def _retrieve_brute_force(
                     "doc_name": doc.name if doc else "",
                     "dataset_id": ds_id,
                     "dataset_name": ds.name if ds else "",
+                    "images": _chunk_image_urls(ch.document_id, ch.images),
                 }
             )
 
@@ -116,6 +132,7 @@ async def _retrieve_with_index(
                 "doc_name": doc.name if doc else "",
                 "dataset_id": ds_id,
                 "dataset_name": ds.name if ds else "",
+                "images": _chunk_image_urls(ch.document_id, ch.images),
             }
         )
     return results

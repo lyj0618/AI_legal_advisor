@@ -73,6 +73,12 @@ def _migrate_chats_columns():
         alters.append("ALTER TABLE chat_messages ADD COLUMN feedback VARCHAR(16)")
     if "attachments_json" not in msg_cols:
         alters.append("ALTER TABLE chat_messages ADD COLUMN attachments_json TEXT DEFAULT '[]'")
+    if "images" not in msg_cols:
+        alters.append("ALTER TABLE chat_messages ADD COLUMN images TEXT DEFAULT '[]'")
+    cur.execute("PRAGMA table_info(chunks)")
+    chunk_cols = {row[1] for row in cur.fetchall()}
+    if "images" not in chunk_cols:
+        alters.append("ALTER TABLE chunks ADD COLUMN images TEXT DEFAULT '[]'")
     for sql in alters:
         cur.execute(sql)
     if alters:

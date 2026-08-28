@@ -38,6 +38,7 @@ class Settings(BaseSettings):
         p.mkdir(parents=True, exist_ok=True)
         (p / "uploads").mkdir(exist_ok=True)
         (p / "chat_images").mkdir(exist_ok=True)
+        (p / "doc_images").mkdir(exist_ok=True)
         (p / "indexes").mkdir(exist_ok=True)
         return p
 

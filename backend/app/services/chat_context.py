@@ -55,6 +55,13 @@ async def build_chat_messages(
     knowledge = build_knowledge_context(chunks)
     sources_body = format_answer_sources_body(chunks, has_kb=bool(kb_ids))
 
+    # 收集检索命中分块所引用的文档内嵌图片 URL（顺序、去重）
+    doc_image_urls: list[str] = []
+    for c in chunks:
+        for u in (c.get("images") or []):
+            if u and u not in doc_image_urls:
+                doc_image_urls.append(u)
+
     system_tpl = prompt_cfg.get("prompt") or DEFAULT_LEGAL_SYSTEM
     if "{knowledge}" in system_tpl:
         system_content = system_tpl.replace("{knowledge}", knowledge or "（暂无匹配知识库内容）")
@@ -63,6 +70,15 @@ async def build_chat_messages(
 
     if "【回答版式】" not in system_content:
         system_content = system_content.rstrip() + ANSWER_FORMAT_INSTRUCTION
+
+    # 若命中知识库截图，提示模型优先依据截图内容作答
+    if doc_image_urls and "【知识库截图】" not in system_content:
+        system_content = (
+            system_content.rstrip()
+            + "\n\n【知识库截图】本次检索命中的知识库片段包含配图（截图），"
+            "请在回答中引用截图中的关键表格、界面与流程信息；如需在回复中展示截图，"
+            "使用约定占位（前端会据此渲染）。"
+        )
 
     image_data_urls = resolve_image_data_urls(chat.id, image_ids or [])
     if image_data_urls and "【图片解读】" not in system_content:
@@ -87,4 +103,4 @@ async def build_chat_messages(
             "content": build_user_message_content(question, image_data_urls),
         }
     )
-    return messages, sources_body
+    return messages, sources_body, doc_image_urls

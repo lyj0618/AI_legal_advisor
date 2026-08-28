@@ -42,7 +42,7 @@ export async function completionStream(chatId, question, handlers = {}, options 
   if (!contentType.includes('text/event-stream')) {
     const j = await res.json()
     if (j.code !== 0) throw new Error(j.message || '请求失败')
-    handlers.onDone?.(j.data?.answer || '')
+    handlers.onDone?.(j.data?.answer || '', j.data?.message_id, '', j.data?.doc_images || [])
     return j.data?.answer || ''
   }
 
@@ -70,7 +70,7 @@ export async function completionStream(chatId, question, handlers = {}, options 
           handlers.onDelta?.(evt.content, full)
         } else if (evt.type === 'done') {
           full = evt.answer || full
-          handlers.onDone?.(full, evt.message_id)
+          handlers.onDone?.(full, evt.message_id, '', evt.doc_images || [])
         } else if (evt.type === 'error') {
           throw new Error(evt.message || '流式输出失败')
         }

@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.routers import auth, chats, datasets, experts, qa_records, retrieval, stats, users, ws
+from app.routers import auth, chats, datasets, doc_images, experts, qa_records, retrieval, stats, users, ws
 
 
 @asynccontextmanager
@@ -31,6 +31,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(datasets.router)
+app.include_router(doc_images.router)
 app.include_router(chats.router)
 app.include_router(retrieval.router)
 app.include_router(experts.router)

@@ -72,6 +72,8 @@ class Chunk(Base):
     id = Column(String(36), primary_key=True)
     document_id = Column(String(36), ForeignKey("documents.id"), nullable=False)
     content = Column(Text, nullable=False)
+    # JSON array of image filenames extracted from docx (e.g. ["img_000.png", ...])
+    images = Column(Text, default="[]")
     available = Column(Boolean, default=True)
     important_keywords = Column(Text, default="[]")
     embedding = Column(Text, default="")
@@ -128,6 +130,8 @@ class ChatMessage(Base):
     role = Column(String(16), nullable=False)
     content = Column(Text, nullable=False)
     attachments_json = Column(Text, default="[]")
+    # JSON array of document image URLs referenced in this message (for assistant role)
+    images = Column(Text, default="[]")
     feedback = Column(String(16), nullable=True)  # like | dislike
     create_date = Column(DateTime, default=_now)
 

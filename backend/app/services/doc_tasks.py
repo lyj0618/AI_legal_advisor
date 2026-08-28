@@ -13,6 +13,7 @@ from app.services.dataset_helpers import DEFAULT_CLEAN_OPTIONS, doc_dict, refres
 from app.services.chunking import (
     CHUNKING_VERSION,
     extract_text,
+    extract_text_with_images,
     reload_chunking_module,
     split_chunks,
     validate_legal_chunk_parts,
@@ -31,6 +32,30 @@ async def _broadcast(dataset_id: str, doc_id: str, doc_data: dict, *, message: s
     )
 
 
+def _associate_images(parts: list[str], image_marks: list[str]) -> list[tuple[str, list[str]]]:
+    """将文档图片按顺序关联到分块：第 i 张图归第 i 个分块，多余的图归入最后一个分块。"""
+    if not image_marks:
+        return [(p, []) for p in parts]
+    n = len(parts)
+    result: list[tuple[str, list[str]]] = [(p, []) for p in parts]
+    for i, fn in enumerate(image_marks):
+        idx = min(i, n - 1) if n else 0
+        result[idx][1].append(fn)
+    return result
+
+
+def _load_image_marks(cleaned_path: Path, doc_id: str) -> list[str]:
+    """读取清洗阶段落盘的图片名 sidecar 文件。"""
+    sidecar = cleaned_path.parent / f"{doc_id}_images.json"
+    if not sidecar.exists():
+        return []
+    try:
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
 async def run_clean_task(dataset_id: str, doc_id: str) -> None:
     db = SessionLocal()
     try:
@@ -46,7 +71,7 @@ async def run_clean_task(dataset_id: str, doc_id: str) -> None:
         file_name = doc.name
 
         def _cpu_clean():
-            raw_text = extract_text(file_path, file_name)
+            raw_text, image_marks = extract_text_with_images(file_path, file_name, doc_id)
             clean_opts = {**DEFAULT_CLEAN_OPTIONS, **(parser_config.get("clean_options") or {})}
             ch = reload_chunking_module()
             cleaned = clean_document_text(raw_text, clean_opts)
@@ -54,6 +79,9 @@ async def run_clean_task(dataset_id: str, doc_id: str) -> None:
             timeliness = analyze_legal_timeliness(cleaned)
             cleaned_path = file_path.parent / f"{doc_id}_cleaned.txt"
             cleaned_path.write_text(cleaned, encoding="utf-8")
+            # 落盘图片名 sidecar，供分块步骤关联
+            image_sidecar = cleaned_path.parent / f"{doc_id}_images.json"
+            image_sidecar.write_text(json.dumps(image_marks, ensure_ascii=False), encoding="utf-8")
             return cleaned_path, timeliness
 
         cleaned_path, timeliness = await asyncio.to_thread(_cpu_clean)
@@ -120,9 +148,10 @@ async def run_chunk_task(dataset_id: str, doc_id: str) -> None:
                 raise ValueError("分块结果为空")
             if strategy == "legal_article" and not ch.validate_legal_chunk_parts(parts, prepared):
                 raise ValueError(f"法条切片校验未通过（{CHUNKING_VERSION}）")
-            return parts
+            image_marks = _load_image_marks(cleaned_path, doc_id)
+            return _associate_images(parts, image_marks)
 
-        parts = await asyncio.to_thread(_cpu_split)
+        parts_with_images = await asyncio.to_thread(_cpu_split)
 
         write_db = SessionLocal()
         chunk_rows: list[tuple[str, str]] = []
@@ -131,7 +160,7 @@ async def run_chunk_task(dataset_id: str, doc_id: str) -> None:
             if not wdoc:
                 return
             write_db.query(Chunk).filter(Chunk.document_id == doc_id).delete()
-            for part in parts:
+            for part, imgs in parts_with_images:
                 cid = new_id()
                 chunk_rows.append((cid, part))
                 write_db.add(
@@ -139,21 +168,23 @@ async def run_chunk_task(dataset_id: str, doc_id: str) -> None:
                         id=cid,
                         document_id=doc_id,
                         content=part,
+                        images=json.dumps(imgs, ensure_ascii=False),
                         available=True,
                         embedding="[]",
                     )
                 )
-            wdoc.chunk_count = len(parts)
+            wdoc.chunk_count = len(parts_with_images)
             wdoc.progress = 0.5
             wdoc.run = "RUNNING"
             write_db.commit()
-            await _broadcast(dataset_id, doc_id, doc_dict(wdoc), message=f"切片完成 {len(parts)} 条，正在嵌入…")
+            await _broadcast(dataset_id, doc_id, doc_dict(wdoc), message=f"切片完成 {len(parts_with_images)} 条，正在嵌入…")
         finally:
             write_db.close()
 
         embed_note = ""
         try:
-            embeddings = await dashscope_client.embed_texts(parts) if parts else []
+            texts_to_embed = [part for part, _ in parts_with_images]
+            embeddings = await dashscope_client.embed_texts(texts_to_embed) if texts_to_embed else []
             emb_db = SessionLocal()
             try:
                 for i, (cid, _) in enumerate(chunk_rows):
@@ -187,7 +218,7 @@ async def run_chunk_task(dataset_id: str, doc_id: str) -> None:
             wdoc = final_db.query(Document).filter(Document.id == doc_id).first()
             if wdoc:
                 refresh_dataset_index(final_db, dataset_id)
-                msg = f"分块完成，共 {len(parts)} 条{embed_note}"
+                msg = f"分块完成，共 {len(parts_with_images)} 条{embed_note}"
                 await _broadcast(dataset_id, doc_id, doc_dict(wdoc), message=msg)
         finally:
             final_db.close()

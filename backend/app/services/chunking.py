@@ -1,6 +1,10 @@
+from __future__ import annotations
+
 import importlib
 import re
 from pathlib import Path
+
+from app.config import settings
 
 # 法条切片逻辑版本（/health 与分块结果校验用）
 CHUNKING_VERSION = "legal-article-v4"
@@ -21,9 +25,21 @@ _CN_NUM = r"[一二三四五六七八九十百千万\d]+"
 
 
 def extract_text(file_path: Path, name: str) -> str:
+    """仅返回正文（供预览等只需文本的调用方使用）。"""
+    return extract_text_with_images(file_path, name, None)[0]
+
+
+def extract_text_with_images(
+    file_path: Path, name: str, doc_id: str | None
+) -> tuple[str, list[str]]:
+    """返回 (正文文本, 文档内嵌图片文件名列表)。
+
+    doc_id 为 None 时不提取图片（预览场景）。docx 场景会按文档顺序把图片
+    保存到 data_path/doc_images/{doc_id}/，并在返回的图片名列表中保持同一顺序。
+    """
     suffix = Path(name).suffix.lower()
     if suffix in (".txt", ".md", ".markdown", ".csv"):
-        return file_path.read_text(encoding="utf-8", errors="ignore")
+        return file_path.read_text(encoding="utf-8", errors="ignore"), []
     if suffix == ".pdf":
         try:
             from pypdf import PdfReader
@@ -33,15 +49,15 @@ def extract_text(file_path: Path, name: str) -> str:
             reader = PdfReader(str(file_path))
             plain = "\n".join(page.extract_text() or "" for page in reader.pages)
             text, _source = extract_pdf_text_with_ocr_fallback(file_path, plain)
-            return text
+            return text, []
         except Exception as e:
             raise ValueError(f"PDF 解析失败: {e}") from e
     if suffix in (".docx", ".doc"):
-        return _extract_word(file_path, suffix)
+        return _extract_word(file_path, suffix, doc_id=doc_id)
     raise ValueError(f"暂不支持该文件类型: {suffix}，支持 txt/md/pdf/docx")
 
 
-def _extract_word(file_path: Path, suffix: str) -> str:
+def _extract_word(file_path: Path, suffix: str, doc_id: str | None = None) -> tuple[str, list[str]]:
     if suffix == ".docx":
         try:
             from docx import Document as DocxDocument
@@ -61,13 +77,55 @@ def _extract_word(file_path: Path, suffix: str) -> str:
             content = "\n".join(parts).strip()
             if not content:
                 raise ValueError("Word 文档无有效文本内容")
-            return content
+            image_marks = _extract_docx_images(doc, doc_id) if doc_id else []
+            return content, image_marks
         except ImportError as e:
             raise ValueError("未安装 python-docx，请执行 pip install python-docx") from e
         except Exception as e:
             raise ValueError(f"Word(.docx) 解析失败: {e}") from e
 
     raise ValueError("旧版 .doc 格式请另存为 .docx 后上传")
+
+
+def _extract_docx_images(doc, doc_id: str | None) -> list[str]:
+    """按文档顺序提取 docx 内嵌图片到 data_path/doc_images/{doc_id}/，返回文件名列表。"""
+    if not doc_id:
+        return []
+    from docx.oxml.ns import qn
+
+    out_dir = settings.data_path / "doc_images" / doc_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    marks: list[str] = []
+    seen: set[str] = set()
+
+    try:
+        # 优先按文档 XML 顺序扫描 <a:blip>，保证图片与正文段落顺序一致
+        for blip in doc.element.body.findall(".//" + qn("a:blip")):
+            r_embed = blip.get(qn("r:embed"))
+            if not r_embed or r_embed in seen:
+                continue
+            seen.add(r_embed)
+            rel = doc.part.rels.get(r_embed)
+            if not rel or "image" not in str(rel.reltype):
+                continue
+            ext = Path(str(rel.target_ref)).suffix.lower() or ".png"
+            fn = f"img_{len(marks):03d}{ext}"
+            out_dir.joinpath(fn).write_bytes(rel.target_part.blob)
+            marks.append(fn)
+    except Exception:
+        # 兜底：遍历所有图片关系（顺序可能略有差异，但保证不丢图）
+        for rid, rel in getattr(doc.part, "rels", {}).items():
+            if "image" not in str(rel.reltype) or rid in seen:
+                continue
+            seen.add(rid)
+            ext = Path(str(rel.target_ref)).suffix.lower() or ".png"
+            fn = f"img_{len(marks):03d}{ext}"
+            try:
+                out_dir.joinpath(fn).write_bytes(rel.target_part.blob)
+            except Exception:
+                continue
+            marks.append(fn)
+    return marks
 
 
 def collapse_vertical_legal_headers(text: str) -> str:

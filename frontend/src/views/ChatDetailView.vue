@@ -44,6 +44,17 @@
               </template>
             </div>
             <div
+              v-if="m.role === 'assistant' && m.docImages?.length"
+              class="msg-doc-images"
+            >
+              <AuthImage
+                v-for="(img, k) in m.docImages"
+                :key="k"
+                :url="img"
+                :alt="'知识库截图'"
+              />
+            </div>
+            <div
               v-if="m.role === 'assistant' && !m.streaming && m.content && m.id"
               class="msg-feedback"
             >
@@ -300,6 +311,7 @@ async function loadMessages() {
       role: m.role,
       content: m.content,
       attachments: m.attachments || [],
+      docImages: m.images || [],
       feedback: m.feedback || null,
       streaming: false,
     }))
@@ -469,10 +481,14 @@ async function send() {
           messages.value[assistantIdx].content = full
           scrollBottom()
         },
-        onDone: (answer, messageId) => {
-          messages.value[assistantIdx].content = answer
-          messages.value[assistantIdx].streaming = false
-          if (messageId) messages.value[assistantIdx].id = messageId
+        onDone: (answer, messageId, _thinking, docImages) => {
+          const msg = messages.value[assistantIdx]
+          if (msg) {
+            msg.content = answer
+            msg.streaming = false
+            msg.docImages = docImages || []
+            if (messageId) msg.id = messageId
+          }
         },
       },
       { imageIds },
@@ -660,6 +676,29 @@ async function save() {
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 8px;
+}
+.msg-doc-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #e2e8f0;
+}
+.msg-doc-images :deep(.chat-msg-image) {
+  width: 120px;
+  height: 96px;
+  max-width: 120px;
+  max-height: 96px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  cursor: zoom-in;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.msg-doc-images :deep(.chat-msg-image:hover) {
+  transform: scale(1.03);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
 }
 :deep(.chat-msg-image) {
   max-width: 220px;
