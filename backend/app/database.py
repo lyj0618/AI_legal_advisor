@@ -79,6 +79,10 @@ def _migrate_chats_columns():
     chunk_cols = {row[1] for row in cur.fetchall()}
     if "images" not in chunk_cols:
         alters.append("ALTER TABLE chunks ADD COLUMN images TEXT DEFAULT '[]'")
+    cur.execute("PRAGMA table_info(qa_records)")
+    qa_cols = {row[1] for row in cur.fetchall()}
+    if "doc_images" not in qa_cols:
+        alters.append("ALTER TABLE qa_records ADD COLUMN doc_images TEXT DEFAULT '[]'")
     for sql in alters:
         cur.execute(sql)
     if alters:

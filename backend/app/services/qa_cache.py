@@ -130,9 +130,11 @@ async def upsert_qa_record(
     question: str,
     answer: str,
     assistant_message_id: int | None,
+    doc_images: list[str] | None = None,
 ) -> QaRecord:
     template_id = resolve_template_id(chat)
     norm = normalize_question(question)
+    doc_images_json = json.dumps(doc_images or [], ensure_ascii=False)
 
     existing: QaRecord | None = None
     if assistant_message_id:
@@ -155,6 +157,7 @@ async def upsert_qa_record(
         existing.answer = answer
         existing.template_id = template_id
         existing.chat_id = chat.id
+        existing.doc_images = doc_images_json
         if embedding_json:
             existing.question_embedding = embedding_json
         db.commit()
@@ -169,6 +172,7 @@ async def upsert_qa_record(
         question_norm=norm,
         answer=answer,
         confidence="low",
+        doc_images=doc_images_json,
         question_embedding=embedding_json,
     )
     db.add(rec)

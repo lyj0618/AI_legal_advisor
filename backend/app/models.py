@@ -153,6 +153,7 @@ class QaRecord(Base):
     confidence = Column(String(16), default="low")  # high | low
     feedback = Column(String(16), nullable=True)  # like | dislike
     question_embedding = Column(Text, default="")
+    doc_images = Column(Text, default="[]")  # JSON array of doc image URLs carried by the answer
     hit_count = Column(Integer, default=0)
     create_date = Column(DateTime, default=_now)
     update_date = Column(DateTime, default=_now, onupdate=_now)

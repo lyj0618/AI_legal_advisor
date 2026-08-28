@@ -406,7 +406,7 @@ def _sse_event(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-async def _stream_cached_answer(chat_id: str, question: str, cached_answer: str, db: Session):
+async def _stream_cached_answer(chat_id: str, question: str, cached_answer: str, db: Session, doc_images: list[str] | None = None):
     db.add(ChatMessage(chat_id=chat_id, role="user", content=question))
     db.commit()
     chunk_size = 24
@@ -424,6 +424,7 @@ async def _stream_cached_answer(chat_id: str, question: str, cached_answer: str,
             question=question,
             answer=cached_answer,
             assistant_message_id=assistant_msg.id,
+            doc_images=doc_images,
         )
     yield _sse_event(
         {
@@ -431,7 +432,7 @@ async def _stream_cached_answer(chat_id: str, question: str, cached_answer: str,
             "answer": cached_answer,
             "message_id": assistant_msg.id,
             "from_cache": True,
-            "doc_images": [],
+            "doc_images": doc_images or [],
         }
     )
 
@@ -458,6 +459,7 @@ async def chat_completion(
     cached = await find_high_confidence_answer(db, chat, question) if use_cache and question else None
     if cached:
         answer = compose_answer(strip_markdown(cached.answer), "")
+        cached_doc_images = json.loads(cached.doc_images or "[]") if cached.doc_images else []
         if not body.stream:
             db.add(_create_user_message(chat_id, question, image_ids))
             assistant_msg = ChatMessage(chat_id=chat_id, role="assistant", content=answer)
@@ -470,11 +472,12 @@ async def chat_completion(
                 question=question,
                 answer=answer,
                 assistant_message_id=assistant_msg.id,
+                doc_images=cached_doc_images,
             )
-            return ok({"answer": answer, "message_id": assistant_msg.id, "from_cache": True, "doc_images": []})
+            return ok({"answer": answer, "message_id": assistant_msg.id, "from_cache": True, "doc_images": cached_doc_images})
 
         return StreamingResponse(
-            _stream_cached_answer(chat_id, question, answer, db),
+            _stream_cached_answer(chat_id, question, answer, db, cached_doc_images),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -513,6 +516,7 @@ async def chat_completion(
                 question=question,
                 answer=answer,
                 assistant_message_id=assistant_msg.id,
+                doc_images=doc_image_urls,
             )
         return ok({"answer": answer, "message_id": assistant_msg.id, "doc_images": doc_image_urls})
 
@@ -541,6 +545,7 @@ async def chat_completion(
                     question=question,
                     answer=answer,
                     assistant_message_id=assistant_msg.id,
+                    doc_images=doc_image_urls,
                 )
             yield _sse_event({"type": "done", "answer": answer, "message_id": assistant_msg.id, "doc_images": doc_image_urls})
         except Exception as e:
