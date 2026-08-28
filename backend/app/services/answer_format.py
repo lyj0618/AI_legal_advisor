@@ -15,15 +15,21 @@ _LEGACY_SUFFIX_RE = re.compile(
     re.MULTILINE,
 )
 _PLACEHOLDER_LINE_RE = re.compile(r"^[（(][^）)]*[）)]\s*$")
+_SENTENCE_END_RE = re.compile(r"[。；.;!?！？]")
 
 ANSWER_FORMAT_INSTRUCTION = """
 
 【回答版式】必须严格按下列结构输出。每个标题单独占一行，标题下空一行写正文；禁止使用 Markdown 符号。
 
-重要：「结论」「依据」两节必须填写实质内容，不得留空、不得只重复标题，不得照抄本说明中的括号提示语。
+重要规则：
+1. 「结论」只能用 1-2 句话给出直接、可执行的结论，例如“需要……”“应当……”“原因是……”。
+   结论里不得引用来源编号、不得展开解释、不得照抄本说明中的括号提示语。
+2. 「依据」详细说明理由与依据，可引用知识库来源并分 1. 2. 3. 条陈述。
+3. 「结论」与「依据」不能出现完全相同或几乎相同的段落；结论要比依据简短得多。
+4. 不得输出「回答依据出处」标题及其正文，该节由系统自动填写。
 
 结论
-（用一两句话给出直接、可执行的结论）
+（用1-2句话直接给出结论，不含引用和详细解释）
 
 依据
 （说明理由与依据，可分 1. 2. 3. 条陈述）
@@ -78,6 +84,21 @@ def _clean_section_body(body: str) -> str:
     return body
 
 
+def _first_sentence(text: str, max_len: int = 80) -> str:
+    """取文本第一句（按中文/英文句号、分号等），限制最大长度。"""
+    t = (text or "").strip()
+    if not t:
+        return ""
+    m = _SENTENCE_END_RE.search(t)
+    if m:
+        s = t[: m.end()].strip()
+    else:
+        s = t
+    if len(s) > max_len:
+        s = s[:max_len].rstrip() + "…"
+    return s
+
+
 def _sanitize_llm_text(text: str) -> str:
     """去掉模型自行输出的出处节及旧版 --- 出处后缀，避免与系统出处重复。"""
     s = (text or "").strip()
@@ -122,8 +143,8 @@ def _ensure_core_sections(sections: dict[str, str], raw_text: str, sources_body:
 
     if not out.get("结论"):
         if out.get("依据"):
-            first = out["依据"].split("\n")[0].strip()
-            out["结论"] = first[:300] if first else "请参见下方依据说明。"
+            first = _first_sentence(out["依据"], max_len=80)
+            out["结论"] = first if first else "请参见下方依据说明。"
         elif _sources_indicate_low_relevance(sources_body):
             out["结论"] = "知识库中暂未检索到与您问题直接相关的制度条款，无法给出确定性操作结论。"
         elif (sources_body or "").strip():
