@@ -493,6 +493,22 @@ async def chat_completion(
     except Exception as e:
         return err(str(e))
 
+    # 将版式约束追加到用户消息末尾（贴近生成，模型遵循度最高）；
+    # 放在路由层而非 chat_images，确保 reload 热重载也能加载到最新版式指令。
+    from app.services.answer_format import ANSWER_FORMAT_INSTRUCTION
+
+    for m in reversed(messages):
+        if m.get("role") == "user":
+            content = m.get("content")
+            if isinstance(content, str):
+                m["content"] = content + ANSWER_FORMAT_INSTRUCTION
+            elif isinstance(content, list):
+                for part in reversed(content):
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        part["text"] = part["text"] + ANSWER_FORMAT_INSTRUCTION
+                        break
+            break
+
     if not body.stream:
         try:
             raw = (await dashscope_client.chat_completion(messages)).rstrip()

@@ -24,7 +24,13 @@
           v-show="!isSourcesSection(block) || sourcesExpanded"
           class="answer-section-body"
         >
-          {{ block.body }}
+          <template v-if="block.title === '结论' && block.subsections && block.subsections.length">
+            <div v-for="(sub, sidx) in block.subsections" :key="sidx" class="answer-subsection">
+              <div class="answer-subsection-title">{{ sub.title }}</div>
+              <div class="answer-subsection-body">{{ sub.body }}</div>
+            </div>
+          </template>
+          <template v-else>{{ block.body }}</template>
         </div>
       </div>
     </template>
@@ -45,7 +51,41 @@ const props = defineProps({
   streaming: { type: Boolean, default: false },
 })
 
-const sections = computed(() => parseAnswerSections(props.text || ''))
+const CONCLUSION_SUB_TITLES = ['问题现象', '问题定位', '问题自查', '解决方案', '仍未解决']
+
+function parseConclusionSubsections(body) {
+  if (!body) return []
+  const lines = body.split('\n')
+  const result = []
+  let current = null
+  for (const line of lines) {
+    const trimmed = line.trim()
+    const matched = CONCLUSION_SUB_TITLES.find(
+      (t) => trimmed === t || trimmed.startsWith(t + '：') || trimmed.startsWith(t + ':'),
+    )
+    if (matched) {
+      if (current && current.body.trim()) result.push(current)
+      let rest = ''
+      const ci = trimmed.indexOf('：')
+      const ei = trimmed.indexOf(':')
+      const c = ci >= 0 ? ci : ei
+      if (c >= 0 && trimmed.length > c + 1) {
+        rest = trimmed.slice(c + 1).trim()
+      }
+      current = { title: matched, body: rest }
+    } else if (current) {
+      current.body += (current.body ? '\n' : '') + line
+    }
+  }
+  if (current && current.body.trim()) result.push(current)
+  return result
+}
+
+const sections = computed(() =>
+  parseAnswerSections(props.text || '').map((b) =>
+    b.title === '结论' ? { ...b, subsections: parseConclusionSubsections(b.body) } : b,
+  ),
+)
 const sourcesExpanded = ref(false)
 
 function isSourcesSection(block) {
@@ -106,5 +146,23 @@ function isSourcesSection(block) {
 }
 .answer-section-title--toggle + .answer-section-body {
   margin-top: 6px;
+}
+.answer-subsection + .answer-subsection {
+  margin-top: 10px;
+}
+.answer-subsection-title {
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #0f172a;
+  margin-bottom: 3px;
+}
+.answer-subsection-body {
+  font-size: 14px;
+  line-height: 1.65;
+  color: #334155;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding-left: 2px;
 }
 </style>

@@ -8,5 +8,5 @@ if __name__ == "__main__":
         "app.main:app",
         host="127.0.0.1",
         port=settings.port,
-        reload=True,
+        reload=False,  # Windows 下 uvicorn WatchFiles 热重载存在不重新加载模块的怪癖，关闭以保证加载最新代码
     )
