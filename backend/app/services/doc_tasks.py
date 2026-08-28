@@ -147,7 +147,16 @@ async def run_chunk_task(dataset_id: str, doc_id: str) -> None:
             if not parts:
                 raise ValueError("分块结果为空")
             if strategy == "legal_article" and not ch.validate_legal_chunk_parts(parts, prepared):
-                raise ValueError(f"法条切片校验未通过（{CHUNKING_VERSION}）")
+                # 该文档并非标准法条结构，法条切片校验不过；回退通用分块，避免整篇分块失败
+                strategy = "naive"
+                parts = ch.split_chunks(
+                    cleaned,
+                    chunk_token_num=int(parser_config.get("chunk_token_num", 512)),
+                    delimiter=parser_config.get("delimiter") or "",
+                    chunk_strategy="naive",
+                )
+                if not parts:
+                    raise ValueError("分块结果为空（通用分块仍失败）")
             image_marks = _load_image_marks(cleaned_path, doc_id)
             return _associate_images(parts, image_marks)
 
