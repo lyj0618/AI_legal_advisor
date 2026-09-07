@@ -229,21 +229,76 @@ sudo crontab -e
 
 ---
 
-## 8. 升级流程
+## 8. 升级流程（本机 → 服务器）
+
+> ⚠️ 本项目的目标服务器（腾讯云，124.223.189.99）**访问不到 GitHub**
+> （`GnuTLS recv error (-110)`），因此 `git pull` 这条路走不通。
+> 实际采用的方式是：**在本机打包 → scp 上传 → 服务器端 rsync 精确同步**。
+> 已经封装成脚本，日常一条命令搞定。
+
+### 8.1 日常同步（推荐）
+
+在本机 Git Bash 里执行：
 
 ```bash
-# 本地开发机：提交代码 → git push
-# 服务器：
-ssh user@your.server
-cd /opt/legal-ai-advisor
-git pull                                          # 拉新代码
-sudo ./deploy/backend/install.sh                  # 重跑部署（覆盖 app/，保留 venv/data/.env）
-cd frontend && npm ci && npm run build            # 重新构建前端
-sudo cp -r dist/* /var/www/legal-ai-advisor/
-sudo systemctl restart legal-ai-advisor-backend
+cd C:/Users/Administrator/legal-ai-advisor-original   # 你的工作副本路径
+./deploy/scripts/sync-to-server.sh
 ```
 
-如果改了 `requirements.txt`：脚本里 `pip install -r` 会自动安装新依赖。如果改了 `.env` 模板：用 `diff .env.production.template backend/.env` 检查后手动合并。
+默认行为：同步后端源码 → 构建前端 → 上传 `dist/` → 重启后端 → 等待健康检查通过。
+`.env`、`.venv/`、`data/` **不会被覆盖**。
+
+常用变体：
+
+| 命令 | 用途 |
+|------|------|
+| `./deploy/scripts/sync-to-server.sh backend` | 只改了后端 Python 代码 |
+| `./deploy/scripts/sync-to-server.sh frontend` | 只改了前端（纯静态更新，不重启服务） |
+| `./deploy/scripts/sync-to-server.sh frontend --no-build` | 已有 dist/，直接上传，不重新构建 |
+| `./deploy/scripts/sync-to-server.sh backend --pip` | requirements.txt 有变动，顺带更新依赖 |
+| `./deploy/scripts/sync-to-server.sh deps` | 只重装 Python 依赖 |
+
+脚本顶部可用环境变量覆盖目标机：`SERVER_HOST` / `SERVER_USER` / `SSH_KEY` /
+`APP_DIR` / `WEB_DIR` / `SERVICE`。
+
+### 8.2 手工同步（脚本不可用时的兜底）
+
+```bash
+# --- 后端 ---
+cd legal-ai-advisor-original
+tar -czf /tmp/laa-backend.tgz -C backend app run.py requirements.txt scripts tests
+scp -i ~/.ssh/id_ed25519_legalai /tmp/laa-backend.tgz ubuntu@124.223.189.99:/tmp/
+ssh -i ~/.ssh/id_ed25519_legalai ubuntu@124.223.189.99
+  mkdir -p /tmp/stg && tar -xzf /tmp/laa-backend.tgz -C /tmp/stg
+  rsync -a --delete /tmp/stg/app/ /opt/legal-ai-advisor/backend/app/
+  cp -a /tmp/stg/run.py /tmp/stg/requirements.txt /opt/legal-ai-advisor/backend/
+  sudo systemctl restart legal-ai-advisor-backend
+  curl -s http://127.0.0.1:8003/health
+
+# --- 前端 ---
+cd frontend && npm run build
+tar -czf /tmp/laa-frontend.tgz -C dist .
+scp -i ~/.ssh/id_ed25519_legalai /tmp/laa-frontend.tgz ubuntu@124.223.189.99:/tmp/
+ssh -i ~/.ssh/id_ed25519_legalai ubuntu@124.223.189.99
+  mkdir -p /tmp/stg2 && tar -xzf /tmp/laa-frontend.tgz -C /tmp/stg2
+  rsync -a --delete /tmp/stg2/ /var/www/legal-ai-advisor/
+```
+
+### 8.3 回滚
+
+后端代码回滚：在本机 `git checkout <旧提交> -- backend/` 后重新同步即可；
+`app/` 用 `--delete` 同步，能保证服务器上多余文件也被清掉。
+
+前端回滚：本机切到旧提交后重新 `npm run build` 再同步。
+
+数据回滚：`deploy/scripts/backup.sh` 的备份解压回 `/opt/legal-ai-advisor/backend/data/`。
+
+### 8.4 注意事项
+
+- 改了 `requirements.txt` 记得加 `--pip`，否则只是文件传上去、依赖没装。
+- 改了 `.env` 必须手工到服务器上改（脚本刻意不碰 `.env`，避免覆盖线上密钥）。
+- 前端 `vite.config.js` 的 proxy 只对开发态生效，生产走 Caddy 反代，不需要改。
+- 同步前脚本会提示本地未提交的改动，建议先 `git commit` 再同步，便于追溯线上版本。
 
 ---
 
