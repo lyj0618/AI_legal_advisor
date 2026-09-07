@@ -1,4 +1,4 @@
-"""助手回答固定版式：结论 / 依据 / 注意事项 / 回答依据出处 / 兜底回复。"""
+"""助手回答固定版式：结论 / 注意事项 / 回答依据出处 / 兜底回复。"""
 from __future__ import annotations
 
 import re
@@ -24,9 +24,8 @@ ANSWER_FORMAT_INSTRUCTION = """
 重要规则：
 1. 「结论」必须按下面五段式结构输出，分别说明：问题现象、问题定位、问题自查、解决方案、仍未解决。
    如果某一段确实无内容，可写“无”，但五段标题必须全部保留、顺序不得调换。
-2. 「依据」详细说明理由与知识库来源，可分 1. 2. 3. 条陈述；不得与「结论」中的五段内容完全重复。
-3. 不得输出「回答依据出处」标题及其正文，该节由系统自动填写。
-4. 结论内的二级标题（问题现象、问题定位、问题自查、解决方案、仍未解决）不要加粗、不要用 Markdown，单独占一行即可。
+2. 不得输出「回答依据出处」标题及其正文，该节由系统自动填写。
+3. 结论内的二级标题（问题现象、问题定位、问题自查、解决方案、仍未解决）不要加粗、不要用 Markdown，单独占一行即可。
 
 结论
 
@@ -44,9 +43,6 @@ ANSWER_FORMAT_INSTRUCTION = """
 
 仍未解决
 （若上述步骤无法解决，说明需要进一步提供的信息或反馈渠道；若无疑似未解决项，写“无”）
-
-依据
-（说明理由与依据，可引用知识库来源并分 1. 2. 3. 条陈述）
 
 注意事项
 （仅当存在风险、例外、合规提醒或操作限制时输出本节；若无则整节省略，不要写「注意事项」标题）
@@ -168,7 +164,7 @@ def _ensure_core_sections(sections: dict[str, str], raw_text: str, sources_body:
     if not out and raw_text.strip() and not _only_section_headers(raw_text):
         out["结论"] = raw_text.strip()
 
-    for key in ("结论", "依据", "注意事项", "兜底回复"):
+    for key in ("结论", "注意事项", "兜底回复"):
         if key in out:
             cleaned = _clean_section_body(out[key])
             if cleaned:
@@ -177,26 +173,12 @@ def _ensure_core_sections(sections: dict[str, str], raw_text: str, sources_body:
                 out.pop(key, None)
 
     if not out.get("结论"):
-        if out.get("依据"):
-            first = _first_sentence(out["依据"], max_len=80)
-            out["结论"] = first if first else "请参见下方依据说明。"
-        elif _sources_indicate_low_relevance(sources_body):
+        if _sources_indicate_low_relevance(sources_body):
             out["结论"] = "知识库中暂未检索到与您问题直接相关的制度条款，无法给出确定性操作结论。"
         elif (sources_body or "").strip():
             out["结论"] = "已根据知识库检索结果整理参考意见，具体执行请以本单位现行制度或主管部门答复为准。"
         else:
             out["结论"] = "本次未能生成完整回答，请尝试重新表述问题或稍后重试。"
-
-    if not out.get("依据"):
-        if _sources_indicate_low_relevance(sources_body):
-            out["依据"] = (
-                "系统已在绑定知识库中检索，但匹配片段与当前问题的相关度较低，"
-                "不宜作为直接依据；建议向人事或行政部门核实午餐津贴等福利制度的最新规定。"
-            )
-        elif (sources_body or "").strip():
-            out["依据"] = "以下整理自知识库检索片段与问题分析，请结合出处列表核对原文。"
-        else:
-            out["依据"] = "以上结论基于模型分析生成，未绑定或未命中知识库，仅供参考。"
 
     return out
 
@@ -217,6 +199,9 @@ def compose_answer(llm_text: str, sources_body: str = "") -> str:
 
     blocks: list[str] = []
     for title in SECTION_TITLES:
+        if title == "依据":
+            # 「依据」节已废弃，不再向用户展示；仅保留解析能力以兼容旧回答。
+            continue
         if title == "回答依据出处":
             body = (sources_body or "").strip()
             if body:

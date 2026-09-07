@@ -1,0 +1,40 @@
+[Unit]
+Description=Legal AI Advisor Backend (FastAPI + uvicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=__DEPLOY_ROOT__/backend
+EnvironmentFile=__DEPLOY_ROOT__/backend/.env
+ExecStart=__DEPLOY_ROOT__/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8003 --workers 1 --proxy-headers --forwarded-allow-ips="*"
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# 自动重启
+Restart=always
+RestartSec=3
+
+# 文件描述符（FAISS + 并发上传需要）
+LimitNOFILE=65535
+
+# 日志：journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=legal-ai-advisor
+
+# 资源限制（2GB 内存机器上调）
+# 软限 1.2GB，硬限 1.6GB；OOM 触发后由 systemd 重启
+MemoryMax=1600M
+MemoryHigh=1200M
+
+# 临时目录（embeddings 模型缓存、pytesseract 临时文件）
+PrivateTmp=true
+ProtectSystem=full
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

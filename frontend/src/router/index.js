@@ -22,6 +22,7 @@ const routes = [
     children: [
       { path: 'experts', name: 'experts', component: () => import('@/views/ExpertsView.vue') },
       { path: 'users', name: 'users', meta: { adminOnly: true }, component: () => import('@/views/UsersView.vue') },
+      { path: 'personalized', name: 'personalized', meta: { adminOnly: true }, component: () => import('@/views/PersonalizedView.vue') },
       { path: 'stats', name: 'stats', meta: { adminOnly: true }, component: () => import('@/views/StatsView.vue') },
       { path: 'qa-records', name: 'qaRecords', meta: { adminOnly: true }, component: () => import('@/views/QaRecordsView.vue') },
       { path: 'kb', name: 'kb', meta: { adminOnly: true }, component: () => import('@/views/KbListView.vue') },

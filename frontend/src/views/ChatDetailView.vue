@@ -15,14 +15,13 @@
           {{ chat.prompt.opener }}
         </div>
         <div v-for="(m, i) in messages" :key="i" :class="'chat-msg ' + (m.role === 'user' ? 'msg-user' : 'msg-assistant')">
-          <div
+          <img
             v-if="m.role === 'assistant'"
+            src="/avatars/default-assistant-avatar.png"
             class="msg-avatar assistant-avatar"
-            :style="assistantAvatarStyle"
             :title="chat?.name"
-          >
-            {{ assistantInitial }}
-          </div>
+            alt="助手头像"
+          />
           <div class="msg-content">
             <div class="msg-bubble">
               <div v-if="m.role === 'user' && m.attachments?.length" class="msg-images">
@@ -80,9 +79,13 @@
               </button>
             </div>
           </div>
-          <div v-if="m.role === 'user'" class="msg-avatar user-avatar" :title="auth.username">
-            {{ userInitial }}
-          </div>
+          <img
+            v-if="m.role === 'user'"
+            src="/avatars/default-user-avatar.png"
+            class="msg-avatar user-avatar"
+            :title="auth.username"
+            alt="用户头像"
+          />
         </div>
       </div>
       <div
@@ -179,7 +182,7 @@
       </div>
       <div class="config-section">
         <h4>系统提示词</h4>
-        <el-input v-model="form.sys_prompt" type="textarea" :rows="8" placeholder="助手人设；回答将按「结论/依据/注意事项/兜底回复」版式输出..." />
+        <el-input v-model="form.sys_prompt" type="textarea" :rows="8" placeholder="助手人设；回答将按「结论/注意事项/兜底回复」版式输出..." />
       </div>
       <div class="config-section">
         <h4>检索参数</h4>
@@ -214,6 +217,7 @@ import AnswerContent from '@/components/AnswerContent.vue'
 import AuthImage from '@/components/AuthImage.vue'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
+import { usePersonalizedStore } from '@/stores/personalized'
 import { cleanImageAnalysis } from '@/utils/textFormat'
 
 const maxChatImages = 3
@@ -223,6 +227,7 @@ const route = useRoute()
 const router = useRouter()
 const store = useAppStore()
 const auth = useAuthStore()
+const personalized = usePersonalizedStore()
 const chatId = route.params.id
 const chat = ref(null)
 const isTemplate = ref(false)
@@ -250,14 +255,6 @@ const form = reactive({
 const showSettings = computed(
   () => auth.isAdmin && isTemplate.value && route.query.tab === 'settings'
 )
-const assistantColor = computed(() => chat.value?.color || '#2563eb')
-const assistantInitial = computed(() => (chat.value?.name || '助').charAt(0))
-const userInitial = computed(() => (auth.username || '用').charAt(0).toUpperCase())
-const assistantAvatarStyle = computed(() => ({
-  background: `${assistantColor.value}18`,
-  color: assistantColor.value,
-  border: `1px solid ${assistantColor.value}33`,
-}))
 const hasAnalyzingImages = computed(() => pendingImages.value.some((img) => img.analyzing))
 
 function goBack() {
@@ -271,6 +268,7 @@ function onEnterKey(e) {
 }
 
 onMounted(async () => {
+  personalized.restore()
   if (auth.isAdmin) await store.fetchDatasets()
   await loadChat()
   await loadMessages()

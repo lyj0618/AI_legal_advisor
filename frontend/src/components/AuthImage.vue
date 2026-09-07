@@ -1,5 +1,23 @@
 <template>
-  <img v-if="src" :src="src" :alt="alt" :class="imgClass" />
+  <div v-if="src" class="auth-image-wrapper">
+    <img
+      :src="src"
+      :alt="alt"
+      :class="imgClass"
+      :title="alt || '点击查看大图'"
+      @click="previewVisible = true"
+    />
+    <div
+      v-if="previewVisible"
+      class="image-preview-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="图片预览"
+      @click="previewVisible = false"
+    >
+      <img :src="src" :alt="alt" class="image-preview-img" />
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -12,6 +30,7 @@ const props = defineProps({
 })
 
 const src = ref('')
+const previewVisible = ref(false)
 let objectUrl = ''
 
 async function load() {
@@ -20,6 +39,7 @@ async function load() {
     objectUrl = ''
   }
   src.value = ''
+  previewVisible.value = false
   if (!props.url) return
   const token = localStorage.getItem('access_token')
   try {
@@ -35,9 +55,49 @@ async function load() {
   }
 }
 
+function onKeydown(e) {
+  if (e.key === 'Escape') previewVisible.value = false
+}
+
 watch(() => props.url, load, { immediate: true })
+watch(previewVisible, (v) => {
+  document.body.style.overflow = v ? 'hidden' : ''
+  if (v) {
+    window.addEventListener('keydown', onKeydown)
+  } else {
+    window.removeEventListener('keydown', onKeydown)
+  }
+})
 
 onBeforeUnmount(() => {
   if (objectUrl) URL.revokeObjectURL(objectUrl)
+  window.removeEventListener('keydown', onKeydown)
+  document.body.style.overflow = ''
 })
 </script>
+
+<style scoped>
+.auth-image-wrapper {
+  display: inline-block;
+}
+.image-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+  cursor: zoom-out;
+  padding: 24px;
+}
+.image-preview-img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  cursor: default;
+  background: #fff;
+}
+</style>

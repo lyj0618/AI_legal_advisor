@@ -2,8 +2,9 @@
   <div class="answer-content">
     <template v-if="sections.length && sections[0].title">
       <div v-for="(block, idx) in sections" :key="idx" class="answer-section">
+        <template v-if="isHiddenSection(block)"></template>
         <div
-          v-if="isSourcesSection(block)"
+          v-else-if="isSourcesSection(block)"
           class="answer-section-title answer-section-title--toggle"
           role="button"
           tabindex="0"
@@ -21,7 +22,7 @@
         </div>
         <div v-else class="answer-section-title">{{ block.title }}</div>
         <div
-          v-show="!isSourcesSection(block) || sourcesExpanded"
+          v-show="!isHiddenSection(block) && (!isSourcesSection(block) || sourcesExpanded)"
           class="answer-section-body"
         >
           <template v-if="block.title === '结论' && block.subsections && block.subsections.length">
@@ -90,6 +91,11 @@ const sourcesExpanded = ref(false)
 
 function isSourcesSection(block) {
   return block.title === '回答依据出处'
+}
+
+function isHiddenSection(block) {
+  // 「依据」节已废弃，前端不再展示，仅保留解析兼容旧回答
+  return block.title === '依据'
 }
 </script>
 

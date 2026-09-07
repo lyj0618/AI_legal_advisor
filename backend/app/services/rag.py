@@ -209,6 +209,14 @@ def build_knowledge_context(chunks: list[dict[str, Any]], *, min_sim: float = 0.
 SOURCE_DISPLAY_MIN_SIM = 0.35
 
 
+def select_display_chunks(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """筛选应作为「回答依据出处」展示的分块，保持与 format_answer_sources_body 一致。"""
+    if not chunks:
+        return []
+    ranked = sorted(chunks, key=lambda x: float(x.get("similarity") or 0), reverse=True)
+    return [c for c in ranked if float(c.get("similarity") or 0) >= SOURCE_DISPLAY_MIN_SIM]
+
+
 def format_answer_sources_body(chunks: list[dict[str, Any]], *, has_kb: bool) -> str:
     """生成「回答依据出处」节正文（不含标题）。"""
     if not has_kb:
@@ -218,7 +226,7 @@ def format_answer_sources_body(chunks: list[dict[str, Any]], *, has_kb: bool) ->
 
     ranked = sorted(chunks, key=lambda x: float(x.get("similarity") or 0), reverse=True)
     top_sim = float(ranked[0].get("similarity") or 0)
-    display = [c for c in ranked if float(c.get("similarity") or 0) >= SOURCE_DISPLAY_MIN_SIM]
+    display = select_display_chunks(chunks)
 
     if not display:
         return (

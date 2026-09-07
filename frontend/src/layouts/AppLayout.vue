@@ -22,14 +22,25 @@
             <div class="menu-item" :class="{ active: isActive('chat') }" @click="$router.push('/chat')">
               <el-icon><ChatDotRound /></el-icon> 专家管理
             </div>
-            <div class="menu-item" :class="{ active: isActive('users') }" @click="$router.push('/users')">
-              <el-icon><Avatar /></el-icon> 用户管理
-            </div>
             <div class="menu-item" :class="{ active: isActive('stats') }" @click="$router.push('/stats')">
               <el-icon><DataAnalysis /></el-icon> 运营统计
             </div>
             <div class="menu-item" :class="{ active: isActive('qaRecords') }" @click="$router.push('/qa-records')">
               <el-icon><Notebook /></el-icon> 问答库
+            </div>
+            <div class="menu-group">
+              <div class="menu-item menu-group-title" :class="{ active: isSystemActive }" @click="systemExpanded = !systemExpanded">
+                <el-icon><Setting /></el-icon> 系统管理
+                <el-icon class="menu-chevron" :class="{ expanded: systemExpanded }"><ArrowDown /></el-icon>
+              </div>
+              <div v-show="systemExpanded" class="menu-submenu">
+                <div class="menu-item submenu-item" :class="{ active: isActive('users') }" @click="$router.push('/users')">
+                  <el-icon><Avatar /></el-icon> 用户管理
+                </div>
+                <div class="menu-item submenu-item" :class="{ active: isActive('personalized') }" @click="$router.push('/personalized')">
+                  <el-icon><Brush /></el-icon> 个性化管理
+                </div>
+              </div>
             </div>
           </template>
         </div>
@@ -110,6 +121,7 @@ const auth = useAuthStore()
 const kbTab = ref('dataset')
 const viewingDoc = ref(null)
 const kbName = ref('')
+const systemExpanded = ref(true)
 
 provide('kbContext', {
   kbTab,
@@ -119,6 +131,8 @@ provide('kbContext', {
 })
 
 const isKbDetail = computed(() => route.name === 'kbDetail')
+
+const isSystemActive = computed(() => isActive('users') || isActive('personalized'))
 
 function isActive(name) {
   if (name === 'experts') return route.name === 'experts' || (!auth.isAdmin && route.name === 'chatDetail')

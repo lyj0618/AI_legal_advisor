@@ -8,7 +8,7 @@ from app.services.chat_access import get_config_chat, get_kb_dataset_ids
 from app.services.answer_format import ANSWER_FORMAT_INSTRUCTION, compose_answer
 from app.services.builtin_experts import DEFAULT_LEGAL_SYSTEM
 from app.services.chat_images import build_user_message_content, resolve_image_data_urls
-from app.services.rag import build_knowledge_context, format_answer_sources_body, retrieve
+from app.services.rag import build_knowledge_context, format_answer_sources_body, retrieve, select_display_chunks
 from app.utils import parse_json_field
 
 IMAGE_ANSWER_HINT = """
@@ -56,14 +56,22 @@ async def build_chat_messages(
     sources_body = format_answer_sources_body(chunks, has_kb=bool(kb_ids))
 
     # 只展示与问题高相关的分块所引用的截图：
-    # 按相关度降序取，相似度低于阈值的分块不展示其截图，并限制最多 N 张，
-    # 避免把不相关条目的截图堆砌给用户。
-    DOC_IMAGE_MIN_SIM = 0.35
-    DOC_IMAGE_MAX = 3
+    # 1. 图片必须来自会被展示为「回答依据出处」的分块，保持图文出处一致；
+    # 2. 相似度低于阈值的分块不展示其截图；
+    # 3. 同时要求与最优分块的差距不能过大，避免把同一文档中其他条目的配图混进来；
+    # 4. 限制最多 N 张，避免堆砌。
+    DOC_IMAGE_MIN_SIM = 0.50
+    DOC_IMAGE_MAX = 2
+    IMAGE_RELATIVE_GAP = 0.12
     doc_image_urls: list[str] = []
-    ranked = sorted(chunks, key=lambda x: float(x.get("similarity") or 0), reverse=True)
-    for c in ranked:
-        if float(c.get("similarity") or 0) < DOC_IMAGE_MIN_SIM:
+    display_chunks = select_display_chunks(chunks)
+    if not display_chunks:
+        return messages, sources_body, doc_image_urls
+    top_sim = float(display_chunks[0].get("similarity") or 0)
+    image_min_sim = max(DOC_IMAGE_MIN_SIM, top_sim - IMAGE_RELATIVE_GAP)
+    for c in display_chunks:
+        sim = float(c.get("similarity") or 0)
+        if sim < image_min_sim:
             break
         for u in (c.get("images") or []):
             if u and u not in doc_image_urls:
