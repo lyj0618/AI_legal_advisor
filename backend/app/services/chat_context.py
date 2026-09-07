@@ -65,21 +65,20 @@ async def build_chat_messages(
     IMAGE_RELATIVE_GAP = 0.12
     doc_image_urls: list[str] = []
     display_chunks = select_display_chunks(chunks)
-    if not display_chunks:
-        return messages, sources_body, doc_image_urls
-    top_sim = float(display_chunks[0].get("similarity") or 0)
-    image_min_sim = max(DOC_IMAGE_MIN_SIM, top_sim - IMAGE_RELATIVE_GAP)
-    for c in display_chunks:
-        sim = float(c.get("similarity") or 0)
-        if sim < image_min_sim:
-            break
-        for u in (c.get("images") or []):
-            if u and u not in doc_image_urls:
-                doc_image_urls.append(u)
-                if len(doc_image_urls) >= DOC_IMAGE_MAX:
-                    break
-        if len(doc_image_urls) >= DOC_IMAGE_MAX:
-            break
+    if display_chunks:
+        top_sim = float(display_chunks[0].get("similarity") or 0)
+        image_min_sim = max(DOC_IMAGE_MIN_SIM, top_sim - IMAGE_RELATIVE_GAP)
+        for c in display_chunks:
+            sim = float(c.get("similarity") or 0)
+            if sim < image_min_sim:
+                break
+            for u in (c.get("images") or []):
+                if u and u not in doc_image_urls:
+                    doc_image_urls.append(u)
+                    if len(doc_image_urls) >= DOC_IMAGE_MAX:
+                        break
+            if len(doc_image_urls) >= DOC_IMAGE_MAX:
+                break
 
     system_tpl = prompt_cfg.get("prompt") or DEFAULT_LEGAL_SYSTEM
     if "{knowledge}" in system_tpl:
