@@ -1,0 +1,55 @@
+# ============================================================
+# Caddy 站点配置 - Legal AI Advisor（无域名 / HTTP + 公网 IP 版）
+# 目标机：124.223.189.99（Hermes Agent-ltu8，已装有 Caddy）
+# 用法：替换 /etc/caddy/Caddyfile（原文件先备份），然后
+#       systemctl reload caddy && caddy validate --config /etc/caddy/Caddyfile
+# ============================================================
+# 说明：
+# - 服务器 80 端口已由 Caddy 占用（默认欢迎页），因此本方案直接复用 Caddy
+#   做反代，不再安装 nginx，避免端口冲突，也不影响机器上其他服务。
+# - 以后申请到域名：把 :80 改成域名，Caddy 会自动签发并续期 HTTPS 证书。
+# ============================================================
+
+:80 {
+	# gzip/zstd 压缩静态资源
+	encode zstd gzip
+
+	# 上传大小上限（与后端 .env 的 MAX_UPLOAD_MB=50 对齐，留余量）
+	request_body {
+		max_size 60MB
+	}
+
+	# ---- API 反代到后端 uvicorn 8003 ----
+	# flush_interval -1 是 SSE 流式问答的关键：收到即转发，不缓冲
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8003 {
+			flush_interval -1
+		}
+	}
+
+	# 健康检查直接透传（外部监控用）
+	# 注意：Caddy 不支持 nginx 那种「上游地址带路径」的写法，须先 rewrite
+	handle /healthz {
+		rewrite * /health
+		reverse_proxy 127.0.0.1:8003
+	}
+
+	# ---- 前端静态资源（Vite build 产物） ----
+	handle {
+		root * /var/www/legal-ai-advisor
+		# Vue Router history 模式 fallback
+		try_files {path} /index.html
+		file_server
+	}
+
+	# 基础安全头
+	header {
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer-when-downgrade"
+		-Server
+	}
+	# 说明：日志走 systemd journald（caddy 服务对该目录有写入权限限制，
+	#       不在此指定自定义文件日志，避免 reload 失败）
+	#       查看日志： journalctl -u caddy -f
+}
