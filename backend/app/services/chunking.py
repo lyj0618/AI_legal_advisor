@@ -50,7 +50,8 @@ def extract_text_with_images(
             reader = PdfReader(str(file_path))
             plain = "\n".join(page.extract_text() or "" for page in reader.pages)
             text, _source = extract_pdf_text_with_ocr_fallback(file_path, plain)
-            return text, [], []
+            image_marks, image_sections = _extract_pdf_images(file_path, doc_id)
+            return text, image_marks, image_sections
         except Exception as e:
             raise ValueError(f"PDF 解析失败: {e}") from e
     if suffix in (".docx", ".doc"):
@@ -199,6 +200,64 @@ def _extract_docx_image_positions(doc, doc_id: str | None) -> list[tuple[str, in
 def _extract_docx_images(doc, doc_id: str | None) -> list[str]:
     """仅返回文件名列表的兼容接口。"""
     return [fn for fn, _ in _extract_docx_image_positions(doc, doc_id)]
+
+
+def _extract_pdf_images(
+    file_path: Path, doc_id: str | None, max_images: int = 100
+) -> tuple[list[str], list[list[str]]]:
+    """按文档顺序提取 PDF 内嵌图片，返回 (文件名列表, 按页分组的文件名列表)。
+
+    目前 SOP 类 PDF 是截图/操作手册的主要载体，抽取配图可让回答直接展示关键界面。
+    doc_id 为 None 时（预览场景）不提取图片。
+    """
+    if not doc_id:
+        return [], []
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        return [], []
+
+    out_dir = settings.data_path / "doc_images" / doc_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    marks: list[str] = []
+    sections: list[list[str]] = []
+    # (xref, page_idx) 去重：同一 xref 在同一页只保存一次
+    seen: set[tuple[int, int]] = set()
+
+    try:
+        doc = fitz.open(str(file_path))
+        for page_idx, page in enumerate(doc):
+            if len(marks) >= max_images:
+                break
+            page_marks: list[str] = []
+            for img in page.get_images(full=True):
+                if len(marks) >= max_images:
+                    break
+                xref = img[0]
+                key = (xref, page_idx)
+                if key in seen:
+                    continue
+                seen.add(key)
+                try:
+                    pix = fitz.Pixmap(doc, xref)
+                    if pix.n > 4:  # CMYK -> RGB
+                        pix = fitz.Pixmap(fitz.csRGB, pix)
+                    # 忽略过小图标/装饰性元素
+                    if pix.width < 32 or pix.height < 32:
+                        pix = None
+                        continue
+                    fn = f"img_{len(marks):03d}.png"
+                    pix.save(str(out_dir / fn))
+                    pix = None
+                    marks.append(fn)
+                    page_marks.append(fn)
+                except Exception:
+                    continue
+            if page_marks:
+                sections.append(page_marks)
+    except Exception:
+        return [], []
+    return marks, sections
 
 
 def collapse_vertical_legal_headers(text: str) -> str:
