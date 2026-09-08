@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     data_dir: str = "./data"
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
-    max_upload_mb: int = 50
+    max_upload_mb: int = 100
     max_chat_image_mb: int = 5
     max_chat_images: int = 3
     allowed_upload_extensions: str = ".txt,.md,.pdf,.csv,.docx"

@@ -40,7 +40,7 @@ def extract_text_with_images(
     """
     suffix = Path(name).suffix.lower()
     if suffix in (".txt", ".md", ".markdown", ".csv"):
-        return file_path.read_text(encoding="utf-8", errors="ignore"), []
+        return file_path.read_text(encoding="utf-8", errors="ignore"), [], []
     if suffix == ".pdf":
         try:
             from pypdf import PdfReader
@@ -50,7 +50,7 @@ def extract_text_with_images(
             reader = PdfReader(str(file_path))
             plain = "\n".join(page.extract_text() or "" for page in reader.pages)
             text, _source = extract_pdf_text_with_ocr_fallback(file_path, plain)
-            return text, []
+            return text, [], []
         except Exception as e:
             raise ValueError(f"PDF 解析失败: {e}") from e
     if suffix in (".docx", ".doc"):

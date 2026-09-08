@@ -442,7 +442,7 @@ const chunksLookMerged = computed(() => {
   return chunkTotal.value < 30 || (maxLen > 600 && !hasArticle)
 })
 
-const MAX_UPLOAD_MB = 50
+const MAX_UPLOAD_MB = 100
 const ALLOWED_EXTENSIONS = ['.txt', '.md', '.pdf', '.csv', '.docx']
 let closeWs = null
 
