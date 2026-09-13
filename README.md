@@ -1,2 +1,2 @@
-# AI_legal_advisor
+# AI_advisor
 个人项目
